@@ -31,7 +31,7 @@ exports.registerPatient = async (req, res) => {
         const expiry = new Date(Date.now() + 5 * 60 * 1000);
 
         await prisma.patient.update({
-            where: { id: user.Patient.id },
+            where: { id: user.patient.id },
             data: { otp, otpExpiry: expiry }
         });
 
@@ -51,12 +51,12 @@ exports.verifyOTP = async (req, res) => {
 
         const user = await prisma.user.findUnique({
             where: { email },
-            include: { Patient: true }
+            include: { patient: true }
         });
 
-        if (!user?.Patient) return res.status(404).json({ error: "Patient not found" });
+        if (!user?.patient) return res.status(404).json({ error: "Patient not found" });
 
-        const patient = user.Patient;
+        const patient = user.patient;
 
         if (patient.verified) {
             return res.status(400).json({ error: "Already verified" });
@@ -106,7 +106,7 @@ exports.login = async (req, res) => {
 
         const user = await prisma.user.findUnique({
             where: { email },
-            include: { Patient: true }
+            include: { patient: true }
         });
 
         if (!user) return res.status(404).json({ error: "User not found" });
@@ -115,7 +115,7 @@ exports.login = async (req, res) => {
         if (!validPass) return res.status(400).json({ error: "Invalid credentials" });
 
         // If role is PATIENT → require verified
-        if (user.role === "PATIENT" && !user.Patient?.verified) {
+        if (user.role === "PATIENT" && !user.patient?.verified) {
             return res.status(403).json({ error: "Please verify your account with OTP first." });
         }
 

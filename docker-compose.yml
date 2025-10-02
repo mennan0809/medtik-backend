@@ -11,8 +11,6 @@ services:
       POSTGRES_DB: medtik_db
     ports:
       - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
 
   backend:
     build: .
@@ -28,7 +26,9 @@ services:
       - /app/node_modules
     ports:
       - "4000:4000"
-    command: sh -c "npx prisma generate && npx prisma migrate reset --force && npm run dev"
-
-volumes:
-  postgres_data:
+    command: >
+      sh -c "
+        npx prisma generate &&
+        npx prisma migrate dev --name init --force &&
+        npm run dev
+      "
