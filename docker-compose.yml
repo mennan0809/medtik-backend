@@ -1,0 +1,34 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15
+    container_name: medtik_db
+    restart: always
+    environment:
+      POSTGRES_USER: medtik_user
+      POSTGRES_PASSWORD: medtik_pass
+      POSTGRES_DB: medtik_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    container_name: medtik_backend
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    volumes:
+      # Mount code but keep node_modules safe
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "4000:4000"
+    command: sh -c "npx prisma migrate deploy && npm run dev"
+
+volumes:
+  postgres_data:
