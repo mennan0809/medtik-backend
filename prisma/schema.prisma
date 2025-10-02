@@ -8,6 +8,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Enums
 enum Role {
   ADMIN
   DOCTOR
@@ -42,6 +43,41 @@ enum RecordType {
   OTHER
 }
 
+enum NotificationType {
+  APPOINTMENT
+  CHAT
+  PAYMENT
+  RECORD
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+enum UpdateType {
+  PRICING
+  AVAILABILITY
+  SERVICE
+  DEPARTMENT
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // =========================
 // User
 // =========================
@@ -54,75 +90,80 @@ model User {
   createdAt DateTime @default(now())
 
   // Relations
-  Doctor     Doctor?
-  Patient    Patient?
-  TransactionsAsDoctor  Transaction[] @relation("DoctorTransactions")
-  TransactionsAsPatient Transaction[] @relation("PatientTransactions")
-  DoctorReviews  Review[] @relation("DoctorReviews")
-  PatientReviews Review[] @relation("PatientReviews")
-  DoctorAppointments Appointment[] @relation("DoctorAppointments")
-  PatientAppointments Appointment[] @relation("PatientAppointments")
+  doctor                Doctor?
+  patient               Patient?
+  transactionsAsDoctor  Transaction[]         @relation("DoctorTransactions")
+  transactionsAsPatient Transaction[]         @relation("PatientTransactions")
+  doctorReviews         Review[]              @relation("DoctorReviews")
+  patientReviews        Review[]              @relation("PatientReviews")
+  doctorAppointments    Appointment[]         @relation("DoctorAppointments")
+  patientAppointments   Appointment[]         @relation("PatientAppointments")
+  notifications         Notification[]
+  messages              Message[]
+  doctorUpdateRequests  DoctorUpdateRequest[]
+
+  // Conversations
+  conversations Conversation[] @relation("ConversationParticipants")
+
+  // Payments
+  Conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  conversationId Int?
+  Payment        Payment[]
 }
 
 // =========================
 // Doctor
 // =========================
 model Doctor {
-  id         Int      @id @default(autoincrement())
-  userId     Int      @unique
-  user       User     @relation(fields: [userId], references: [id])
+  id     Int  @id @default(autoincrement())
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id])
 
-  // Professional info
-  title            String?
-  department  Department? @relation(fields: [departmentId], references: [id])
-  departmentId Int?
+  title             String?
+  department        Department? @relation(fields: [departmentId], references: [id])
+  departmentId      Int?
   yearsOfExperience Int?
-  licenseNumber    String?
-  avatarUrl        String?
-  bio              String?
+  licenseNumber     String?
+  avatarUrl         String?
+  bio               String?
 
-  // Languages
-  languages        String[]   // ["Arabic", "English"]
+  languages    String[]
+  hospitals    String[]
+  education    String[]
+  certificates String[]
 
-  // Clinics / hospitals
-  hospitals        String[]   // ["Medtik Virtual Clinic"]
-
-  // Education & Certificates
-  education        String[]
-  certificates     String[]
-
-  // Pricing per service & currency
-  pricing ChatVoiceVideoPricing[]
-
-  // Voice / video provider
-  videoProvider    String?
-
-  // Policies
-  cancellationPolicy String?
-  refundPolicy       String?
-  reschedulePolicy   String?
+  pricing              ChatVoiceVideoPricing[]
+  videoProvider        String?
+  cancellationPolicy   String?
+  refundPolicy         String?
+  reschedulePolicy     String?
+  doctorUpdateRequests DoctorUpdateRequest[]
+  Payment              Payment[]
+  Consultation         Consultation[]
 }
 
+// =========================
+// Department
+// =========================
 model Department {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
   description String?
 
-  doctors     Doctor[] // One-to-many: a department has many doctors
+  doctors Doctor[]
 }
-
 
 // =========================
 // Pricing
 // =========================
 model ChatVoiceVideoPricing {
-  id        Int      @id @default(autoincrement())
-  doctorId  Int
-  doctor    Doctor   @relation(fields: [doctorId], references: [id])
+  id       Int    @id @default(autoincrement())
+  doctorId Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
 
-  service   ServiceType
-  currency  Currency
-  price     Float
+  service  ServiceType
+  currency Currency
+  price    Float
 }
 
 // =========================
@@ -139,23 +180,24 @@ model Patient {
 
   otp       String?
   otpExpiry DateTime?
-  verified  Boolean  @default(false)
+  verified  Boolean   @default(false)
 
-  // Medical Records
-  records   MedicalRecord[]
+  records      MedicalRecord[]
+  Payment      Payment[]
+  Consultation Consultation[]
 }
 
 // =========================
 // Medical Records
 // =========================
 model MedicalRecord {
-  id         Int       @id @default(autoincrement())
-  patientId  Int
-  patient    Patient   @relation(fields: [patientId], references: [id])
-  type       RecordType
-  fileUrl    String
-  createdAt  DateTime  @default(now())
-  notes      String?
+  id        Int        @id @default(autoincrement())
+  patientId Int
+  patient   Patient    @relation(fields: [patientId], references: [id])
+  type      RecordType
+  fileUrl   String
+  createdAt DateTime   @default(now())
+  notes     String?
 }
 
 // =========================
@@ -170,200 +212,161 @@ model Transaction {
   doctorId  Int
   patientId Int
 
-  doctor    User @relation("DoctorTransactions", fields: [doctorId], references: [id])
-  patient   User @relation("PatientTransactions", fields: [patientId], references: [id])
+  doctor  User @relation("DoctorTransactions", fields: [doctorId], references: [id])
+  patient User @relation("PatientTransactions", fields: [patientId], references: [id])
 }
 
 // =========================
 // Appointments
 // =========================
 model Appointment {
-  id         Int        @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  doctorId   Int
-  patientId  Int
+  doctorId  Int
+  patientId Int
 
-  doctor     User       @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  patient    User       @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor  User @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient User @relation("PatientAppointments", fields: [patientId], references: [id])
 
   appointmentType ServiceType
   status          AppointmentStatus @default(CONFIRMED)
 
-  date        DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  date      DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  notes       String?
+  notes         String?
+  payments      Payment[]
+  consultations Consultation[]
 }
 
 // =========================
 // Reviews
 // =========================
 model Review {
-  id         Int      @id @default(autoincrement())
-  doctorId   Int
-  patientId  Int
-  rating     Int      // 1-5
-  comment    String?
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  doctorId  Int
+  patientId Int
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
 
-  doctor     User     @relation("DoctorReviews", fields: [doctorId], references: [id])
-  patient    User     @relation("PatientReviews", fields: [patientId], references: [id])
+  doctor  User @relation("DoctorReviews", fields: [doctorId], references: [id])
+  patient User @relation("PatientReviews", fields: [patientId], references: [id])
 }
 
 // =========================
 // Notifications
 // =========================
-enum NotificationType {
-  APPOINTMENT
-  CHAT
-  PAYMENT
-  RECORD
-  SYSTEM
-}
-
 model Notification {
-  id           Int              @id @default(autoincrement())
-  userId       Int
-  user         User             @relation(fields: [userId], references: [id])
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
 
-  type         NotificationType
-  title        String
-  message      String
-  redirectUrl  String?          // Optional link to redirect to when clicked
-  metadata     Json?            // optional extra info (appointmentId, recordId, paymentId, etc.)
+  type        NotificationType
+  title       String
+  message     String
+  redirectUrl String?
+  metadata    Json?
 
-  read         Boolean          @default(false)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
+// =========================
+// Conversation
+// =========================
 model Conversation {
-  id         Int       @id @default(autoincrement())
-  participants User[]  @relation("ConversationParticipants")
-  messages   Message[]
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id           Int       @id @default(autoincrement())
+  participants User[]    @relation("ConversationParticipants")
+  messages     Message[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  User         User[]
 }
 
 // =========================
 // Message
 // =========================
-
 model Message {
-  id             Int         @id @default(autoincrement())
+  id             Int          @id @default(autoincrement())
   conversationId Int
   conversation   Conversation @relation(fields: [conversationId], references: [id])
 
-  senderId       Int
-  sender         User        @relation(fields: [senderId], references: [id])
+  senderId Int
+  sender   User @relation(fields: [senderId], references: [id])
 
-  content        String
-  type           MessageType @default(TEXT)
-  seen           Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-}
-
-enum MessageType {
-  TEXT
-  IMAGE
-  FILE
-  AUDIO
-  VIDEO
+  content   String
+  type      MessageType @default(TEXT)
+  seen      Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 }
 
 // =========================
 // Payment
 // =========================
-
 model Payment {
-  id           Int        @id @default(autoincrement())
-  appointment  Appointment? @relation(fields: [appointmentId], references: [id])
+  id            Int          @id @default(autoincrement())
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
   appointmentId Int?
 
-  doctor       User        @relation("DoctorPayments", fields: [doctorId], references: [id])
-  doctorId     Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
+  doctorId Int
 
-  patient      User        @relation("PatientPayments", fields: [patientId], references: [id])
-  patientId    Int
+  patient   Patient @relation(fields: [patientId], references: [id])
+  patientId Int
 
-  amount       Float
-  currency     Currency
-  status       PaymentStatus @default(UNPAID)
+  amount   Float
+  currency Currency
+  status   PaymentStatus @default(UNPAID)
 
-  paymobTransactionId String?  // Store PayMob transaction reference
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-enum PaymentStatus {
-  UNPAID
-  PAID
-  REFUNDED
-}
-
-enum Currency {
-  EGP
-  SAR
-  AED
-  USD
+  paymobTransactionId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  User                User?    @relation(fields: [userId], references: [id])
+  userId              Int?
 }
 
 // =========================
 // Consultation
 // =========================
-
 model Consultation {
-  id           Int        @id @default(autoincrement())
-  appointment  Appointment @relation(fields: [appointmentId], references: [id])
+  id            Int         @id @default(autoincrement())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
   appointmentId Int
 
-  doctor       User       @relation("DoctorConsultations", fields: [doctorId], references: [id])
-  doctorId     Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
+  doctorId Int
 
-  patient      User       @relation("PatientConsultations", fields: [patientId], references: [id])
-  patientId    Int
+  patient   Patient @relation(fields: [patientId], references: [id])
+  patientId Int
 
-  notes        String?    // Doctor's or patient's notes
-  diagnosis    String?    // Doctor's diagnosis
-  prescriptions String?   // Any prescribed medications or instructions
-  attachments  String[]   // Could store file URLs (labs, images, etc.)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  notes         String?
+  diagnosis     String?
+  prescriptions String?
+  attachments   String[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // =========================
-// Change Requests
+// Doctor Update Requests
 // =========================
-
 model DoctorUpdateRequest {
-  id        Int        @id @default(autoincrement())
-  doctorId  Int
-  doctor    Doctor     @relation(fields: [doctorId], references: [id])
+  id       Int    @id @default(autoincrement())
+  doctorId Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
 
-  types     UpdateType[]  // multiple types allowed
-  payload   Json
+  types   UpdateType[]
+  payload Json
 
   status    RequestStatus @default(PENDING)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
   reviewedBy Int?
-  reviewer   User?        @relation(fields: [reviewedBy], references: [id])
-  note      String?
+  reviewer   User?   @relation(fields: [reviewedBy], references: [id])
+  note       String?
 }
-
-enum UpdateType {
-  PRICING
-  AVAILABILITY
-  SERVICE
-  DEPARTMENT
-}
-
-enum RequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-

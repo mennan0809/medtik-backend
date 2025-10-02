@@ -19,11 +19,11 @@ exports.registerPatient = async (req, res) => {
                 email,
                 password: hashedPassword,
                 role: "PATIENT",
-                Patient: {
+                patient: {
                     create: { gender, country, phone, birthdate: new Date(birthdate), verified: false }
                 }
             },
-            include: { Patient: true }
+            include: { patient: true }
         });
 
         const statusCallback = `${process.env.BACKEND_URL}/api/otp/status`;

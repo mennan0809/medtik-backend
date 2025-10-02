@@ -28,7 +28,7 @@ services:
       - /app/node_modules
     ports:
       - "4000:4000"
-    command: sh -c "npx prisma migrate deploy && npm run dev"
+    command: sh -c "npx prisma generate && npx prisma migrate reset --force && npm run dev"
 
 volumes:
   postgres_data:
