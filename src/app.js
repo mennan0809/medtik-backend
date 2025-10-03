@@ -7,6 +7,7 @@ const cookieParser = require('cookie-parser');
 // routes
 const authRoutes = require('./routes/auth.routes');
 const otpRoutes = require('./routes/otp.routes');
+const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
 
@@ -20,5 +21,6 @@ app.use(cookieParser());
 // routes
 app.use('/api/auth', authRoutes);
 app.use('/api/otp', otpRoutes);
+app.use('/api/admin', adminRoutes);
 
 module.exports = app;

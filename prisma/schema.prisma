@@ -78,16 +78,22 @@ enum RequestStatus {
   REJECTED
 }
 
+enum UserStatus {
+  ACTIVE
+  BANNED
+}
+
 // =========================
 // User
 // =========================
 model User {
-  id        Int      @id @default(autoincrement())
-  fullName  String
-  email     String   @unique
+  id        Int        @id @default(autoincrement())
+  fullName  String?
+  email     String     @unique
   password  String
-  role      Role     @default(PATIENT)
-  createdAt DateTime @default(now())
+  role      Role       @default(PATIENT)
+  createdAt DateTime   @default(now())
+  status    UserStatus @default(ACTIVE)
 
   // Relations
   doctor                Doctor?
@@ -119,13 +125,15 @@ model Doctor {
   userId Int  @unique
   user   User @relation(fields: [userId], references: [id])
 
-  title             String?
-  department        Department? @relation(fields: [departmentId], references: [id])
-  departmentId      Int?
-  yearsOfExperience Int?
-  licenseNumber     String?
-  avatarUrl         String?
-  bio               String?
+  title              String?
+  department         Department? @relation(fields: [departmentId], references: [id])
+  departmentId       Int?
+  yearsOfExperience  Int?
+  licenseNumber      String?
+  avatarUrl          String?
+  bio                String?
+  mustChangePassword Boolean     @default(true)
+  phone              String?
 
   languages    String[]
   hospitals    String[]
@@ -175,7 +183,7 @@ model Patient {
   user      User     @relation(fields: [userId], references: [id])
   gender    String
   country   String
-  phone     String   @unique
+  phone     String
   birthdate DateTime
 
   otp       String?
