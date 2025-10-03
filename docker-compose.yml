@@ -21,7 +21,6 @@ services:
     env_file:
       - .env
     volumes:
-      # Mount code but keep node_modules safe
       - .:/app
       - /app/node_modules
     ports:
@@ -29,6 +28,17 @@ services:
     command: >
       sh -c "
         npx prisma generate &&
-        npx prisma migrate dev --name init --force &&
+        npx prisma migrate dev --name init &&
         npm run dev
       "
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    command:
+      - "http"
+      - "http://host.docker.internal:4000"
+    environment:
+      NGROK_AUTHTOKEN: 33Waj3dZ58cnDFnA0bUif1JTWOG_6dNcDeYHQkxEV5ox5VZvZ
+    ports:
+      - 4040:4040
+
