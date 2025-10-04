@@ -103,6 +103,11 @@ exports.registerDoctor = async (req, res) => {
     try {
         const { email, password, phoneNumber, department } = req.body;
 
+        const normalizedDepartment = (department ?? "").trim();
+        if (!normalizedDepartment) {
+            return res.status(400).json({ error: "Department is required" });
+        }
+
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -115,8 +120,13 @@ exports.registerDoctor = async (req, res) => {
                 doctor: {
                     create: {
                         mustChangePassword: true,
-                        department: department,
                         phone: phoneNumber,
+                        department: {
+                            connectOrCreate: {
+                                where: { name: normalizedDepartment },
+                                create: { name: normalizedDepartment }
+                            }
+                        },
                     }
                 }
             },
@@ -281,3 +291,6 @@ exports.resetPassword = async (req, res) => {
         res.status(400).json({ error: "Invalid or expired reset token" });
     }
 };
+
+
+
