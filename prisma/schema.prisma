@@ -70,6 +70,8 @@ enum UpdateType {
   AVAILABILITY
   SERVICE
   DEPARTMENT
+  LANGUAGE
+  AVATAR
 }
 
 enum RequestStatus {
@@ -146,17 +148,45 @@ model Doctor {
   pricing       ChatVoiceVideoPricing[]
   availability  DoctorAvailability? // one-to-one availability record
   videoProvider String?
-  currency      Currency?
 
   // Policies
-  cancellationPolicy String?
-  refundPolicy       String?
-  reschedulePolicy   String?
+  cancellationPolicy Int?     @default(2)
+  refundPolicy       Boolean? @default(true)
+  reschedulePolicy   Int?     @default(1)
 
   // Relations
   doctorUpdateRequests DoctorUpdateRequest[]
   Payment              Payment[]
   Consultation         Consultation[]
+  DoctorSlot           DoctorSlot[]
+}
+
+// =========================
+// Slots
+// =========================
+model DoctorSlot {
+  id       Int    @id @default(autoincrement())
+  doctorId Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
+
+  date      DateTime
+  startTime DateTime
+  duration  Int // in minutes
+
+  chat  Boolean @default(false)
+  voice Boolean @default(false)
+  video Boolean @default(false)
+
+  notes  String?
+  status SlotStatus @default(AVAILABLE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum SlotStatus {
+  AVAILABLE
+  RESERVED
 }
 
 // =========================
