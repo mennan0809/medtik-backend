@@ -101,7 +101,7 @@ exports.verifyOTP = async (req, res) => {
 // ===========================
 exports.registerDoctor = async (req, res) => {
     try {
-        const { email, password, department } = req.body;
+        const { email, password, phoneNumber, department } = req.body;
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -116,6 +116,7 @@ exports.registerDoctor = async (req, res) => {
                     create: {
                         mustChangePassword: true,
                         department: department,
+                        phone: phoneNumber,
                     }
                 }
             },
