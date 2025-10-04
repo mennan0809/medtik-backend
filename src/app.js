@@ -10,6 +10,7 @@ const otpRoutes = require('./routes/otp.routes');
 const adminRoutes = require('./routes/admin.routes');
 const doctorRoutes = require('./routes/doctor.routes');
 const patientRoutes = require('./routes/patient.routes');
+const chatRoutes = require('./routes/chat.routes');
 
 const app = express();
 
@@ -26,5 +27,6 @@ app.use('/api/otp', otpRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/doctor', doctorRoutes);
 app.use('/api/patient', patientRoutes);
+app.use("/api/chat", chatRoutes);
 
 module.exports = app;
