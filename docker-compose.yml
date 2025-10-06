@@ -33,6 +33,25 @@ services:
         npm run dev 
       "
 
+  prisma-studio:
+    build: .
+    container_name: medtik_prisma_studio
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "5555:5555"
+    command: >
+      sh -c "
+        npx prisma generate &&
+        npx prisma studio --port 5555 --hostname 0.0.0.0
+      "
+
   ngrok:
     image: ngrok/ngrok:latest
     command:
@@ -41,5 +60,4 @@ services:
     environment:
       NGROK_AUTHTOKEN: 33Waj3dZ58cnDFnA0bUif1JTWOG_6dNcDeYHQkxEV5ox5VZvZ
     ports:
-      - 4040:4040
-
+      - "4040:4040"

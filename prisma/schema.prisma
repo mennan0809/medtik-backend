@@ -8,6 +8,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum status {
+  ACCEPTED
+  REJECTED
+  PENDING
+  NEW
+}
+
 // Enums
 enum Role {
   ADMIN
@@ -98,25 +105,16 @@ model User {
   status    UserStatus @default(ACTIVE)
 
   // Relations
-  doctor                Doctor?
-  patient               Patient?
-  transactionsAsDoctor  Transaction[]         @relation("DoctorTransactions")
-  transactionsAsPatient Transaction[]         @relation("PatientTransactions")
-  doctorReviews         Review[]              @relation("DoctorReviews")
-  patientReviews        Review[]              @relation("PatientReviews")
-  doctorAppointments    Appointment[]         @relation("DoctorAppointments")
-  patientAppointments   Appointment[]         @relation("PatientAppointments")
-  notifications         Notification[]
-  messages              Message[]
-  doctorUpdateRequests  DoctorUpdateRequest[]
+  doctor               Doctor?
+  patient              Patient?
+  notifications        Notification[]
+  messages             Message[]
+  doctorUpdateRequests DoctorUpdateRequest[]
 
-  // Conversations
   conversations Conversation[] @relation("ConversationParticipants")
 
-  // Payments
-  Conversation   Conversation? @relation(fields: [conversationId], references: [id])
-  conversationId Int?
   Payment        Payment[]
+  conversationId Int?
 }
 
 // =========================
@@ -128,21 +126,21 @@ model Doctor {
   user   User @relation(fields: [userId], references: [id])
 
   // Profile
-  title              String?
-  department         Department? @relation(fields: [departmentId], references: [id])
-  departmentId       Int?
-  yearsOfExperience  Int?
-  licenseNumber      String?
-  avatarUrl          String?
-  bio                String?
-  mustChangePassword Boolean     @default(true)
-  phone              String?
-
+  title             String?
+  department        Department? @relation(fields: [departmentId], references: [id])
+  departmentId      Int?
+  yearsOfExperience Int?
+  licenseNumber     String?
+  avatarUrl         String?
+  bio               String?
+  phone             String?
+  status            status      @default(NEW)
+  rejectionReason   String?
   // Details
-  languages    String[]
-  hospitals    String[]
-  education    String[]
-  certificates String[]
+  languages         String[]
+  hospitals         String[]
+  education         String[]
+  certificates      String[]
 
   // Availability & Pricing
   pricing       ChatVoiceVideoPricing[]
@@ -159,6 +157,12 @@ model Doctor {
   Payment              Payment[]
   Consultation         Consultation[]
   DoctorSlot           DoctorSlot[]
+
+  Appointment Appointment[] @relation("DoctorAppointments")
+
+  Review Review[]
+
+  Transaction Transaction[] @relation("DoctorTransactions")
 }
 
 // =========================
@@ -171,7 +175,7 @@ model DoctorSlot {
 
   date      DateTime
   startTime DateTime
-  duration  Int // in minutes
+  endTime   DateTime
 
   chat  Boolean @default(false)
   voice Boolean @default(false)
@@ -245,19 +249,22 @@ model Patient {
   records      MedicalRecord[]
   Payment      Payment[]
   Consultation Consultation[]
+
+  Appointment Appointment[] @relation("PatientAppointments")
+  Review      Review[]
+
+  Transaction Transaction[] @relation("PatientTransactions")
 }
 
 // =========================
 // Medical Records
 // =========================
 model MedicalRecord {
-  id        Int        @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   patientId Int
-  patient   Patient    @relation(fields: [patientId], references: [id])
-  type      RecordType
+  patient   Patient  @relation(fields: [patientId], references: [id])
   fileUrl   String
-  createdAt DateTime   @default(now())
-  notes     String?
+  createdAt DateTime @default(now())
 }
 
 // =========================
@@ -272,8 +279,8 @@ model Transaction {
   doctorId  Int
   patientId Int
 
-  doctor  User @relation("DoctorTransactions", fields: [doctorId], references: [id])
-  patient User @relation("PatientTransactions", fields: [patientId], references: [id])
+  doctor  Doctor  @relation("DoctorTransactions", fields: [doctorId], references: [id])
+  patient Patient @relation("PatientTransactions", fields: [patientId], references: [id])
 }
 
 // =========================
@@ -285,8 +292,8 @@ model Appointment {
   doctorId  Int
   patientId Int
 
-  doctor  User @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  patient User @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor  Doctor  @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient Patient @relation("PatientAppointments", fields: [patientId], references: [id])
 
   appointmentType ServiceType
   status          AppointmentStatus @default(CONFIRMED)
@@ -311,8 +318,8 @@ model Review {
   comment   String?
   createdAt DateTime @default(now())
 
-  doctor  User @relation("DoctorReviews", fields: [doctorId], references: [id])
-  patient User @relation("PatientReviews", fields: [patientId], references: [id])
+  doctor  Doctor  @relation(fields: [doctorId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
 }
 
 // =========================
@@ -343,7 +350,6 @@ model Conversation {
   messages     Message[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-  User         User[]
 }
 
 // =========================

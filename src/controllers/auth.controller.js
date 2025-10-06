@@ -103,15 +103,22 @@ exports.registerDoctor = async (req, res) => {
     try {
         const { email, password, phoneNumber, department } = req.body;
 
-        const normalizedDepartment = (department ?? "").trim();
-        if (!normalizedDepartment) {
+        if (!email) {
+            return res.status(400).json({ error: "Email is required" });
+        }
+        if (!password) {
+            return res.status(400).json({ error: "Password is required" });
+        }
+        if (!phoneNumber) {
+            return res.status(400).json({ error: "Phone number is required" });
+        }
+        if (!department) {
             return res.status(400).json({ error: "Department is required" });
         }
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create user with role = DOCTOR
         const newDoctor = await prisma.user.create({
             data: {
                 email,
@@ -119,13 +126,10 @@ exports.registerDoctor = async (req, res) => {
                 role: "DOCTOR",
                 doctor: {
                     create: {
-                        mustChangePassword: true,
                         phone: phoneNumber,
                         department: {
-                            connectOrCreate: {
-                                where: { name: normalizedDepartment },
-                                create: { name: normalizedDepartment }
-                            }
+                            connect:  { name: department.toLowerCase() },
+
                         },
                     }
                 }

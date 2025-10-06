@@ -115,3 +115,192 @@ exports.toggleBanUser = async (req, res) => {
         res.status(500).json({ error: "Failed to update user status" });
     }
 };
+
+exports.getDoctorUpdateRequests = async (req, res) => {
+    try {
+        const requests = await prisma.doctorUpdateRequest.findMany({
+            include: {
+                doctor: {
+                    include: {
+                        user: { select: { id: true, fullName: true, email: true } }
+                    }
+                },
+                reviewer: { select: { id: true, fullName: true, email: true } }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        res.json(requests);
+    } catch (err) {
+        console.error("Get doctor update requests error:", err);
+        res.status(500).json({ error: "Failed to fetch doctor update requests" });
+    }
+};
+
+exports.acceptRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+
+        // get request with payload + doctor info
+        const request = await prisma.doctorUpdateRequest.findUnique({
+            where: { id: parseInt(requestId) },
+            include: { doctor: true }
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: "Request not found" });
+        }
+
+        const doctorId = request.doctorId;
+        const payload = request.payload || {};
+
+        const updates = {};
+
+        // === map simple service fields ===
+        if (payload.service) {
+            Object.assign(updates, {
+                bio: payload.service.bio,
+                title: payload.service.title,
+                yearsOfExperience: payload.service.yearsOfExperience,
+                licenseNumber: payload.service.licenseNumber,
+                phone: payload.service.phone,
+                videoProvider: payload.service.videoProvider,
+                cancellationPolicy: payload.service.cancellationPolicy,
+                refundPolicy: payload.service.refundPolicy,
+                reschedulePolicy: payload.service.reschedulePolicy,
+            });
+        }
+
+        if (payload.department) {
+            updates.department = {
+                connect: { name: payload.department }
+            };
+        }
+
+        if (payload.avatar) {
+            updates.avatarUrl = payload.avatar.avatarUrl;
+        }
+
+        if (payload.language) {
+            updates.languages = { set: payload.language.languages || [] };
+            updates.hospitals = { set: payload.language.hospitals || [] };
+            updates.education = { set: payload.language.education || [] };
+            updates.certificates = { set: payload.language.certificates || [] };
+        }
+
+        if (payload.availability) {
+            updates.availability = {
+                upsert: {
+                    create: {
+                        chat: payload.availability.chat,
+                        video: payload.availability.video,
+                        voice: payload.availability.voice,
+                    },
+                    update: {
+                        chat: payload.availability.chat,
+                        video: payload.availability.video,
+                        voice: payload.availability.voice,
+                    }
+                }
+            };
+        }
+
+
+        // First update doctor scalar/array fields
+        await prisma.doctor.update({
+            where: { id: doctorId },
+            data: {
+                ...updates,
+                status: request.doctor.status === "PENDING" ? "ACCEPTED" : request.doctor.status,
+            }
+        });
+
+        // Handle pricing separately (if it's a relation model)
+        if (payload.pricing) {
+            await prisma.chatVoiceVideoPricing.deleteMany({
+                where: { doctorId }
+            });
+
+            await prisma.chatVoiceVideoPricing.createMany({
+                data: payload.pricing.map(p => ({
+                    doctorId,
+                    service: p.service,
+                    price: p.price,
+                    currency: p.currency
+                }))
+            });
+        }
+        // mark request as approved
+        const updatedRequest = await prisma.doctorUpdateRequest.update({
+            where: { id: parseInt(requestId) },
+            data: { status: "APPROVED" },
+        });
+        res.json({ message: "Doctor request accepted and profile updated", updatedRequest });
+    } catch (err) {
+        console.error("Accept request error:", err);
+        res.status(500).json({ error: "Failed to accept doctor request" });
+    }
+};
+
+exports.rejectRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { note } = req.body || {};
+
+        if (!note) {
+            return res.status(400).json({ error: "Rejection note is required" });
+        }
+
+        // Reject doctor request
+        const updatedRequest = await prisma.DoctorUpdateRequest.update({
+            where: { id: parseInt(requestId) },
+            data: { status: "REJECTED", note },
+        });
+
+        const doctor = await prisma.doctor.findUniqueOrThrow({
+            where: { id: updatedRequest.doctorId }
+        });
+
+        if (doctor.status === "PENDING") {
+            await prisma.doctor.update({
+                where: { id: updatedRequest.doctorId },
+                data: {
+                    status: "REJECTED",
+                    rejectionReason: notes,
+                },
+            });
+        }
+
+        res.json({ message: "Doctor request rejected", updatedRequest });
+    } catch (err) {
+        console.error("Reject request error:", err);
+        res.status(500).json({ error: "Failed to reject doctor request" });
+    }
+};
+
+exports.deleteRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+
+        const request = await prisma.doctorUpdateRequest.findUnique({
+            where: { id: parseInt(requestId) }
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: "Request not found" });
+        }
+
+        if (request.status === "PENDING") {
+            return res.status(400).json({ error: "Cannot delete a pending request" });
+        }
+
+        await prisma.doctorUpdateRequest.delete({
+            where: { id: parseInt(requestId) }
+        });
+
+        res.json({ message: "Doctor update request deleted successfully" });
+    } catch (err) {
+        console.error("Delete request error:", err);
+        res.status(500).json({ error: "Failed to delete doctor request" });
+    }
+};

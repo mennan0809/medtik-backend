@@ -1,6 +1,7 @@
 const prisma = require("../../config/db");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const paymobService = require("../../services/paymob.service");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -60,7 +61,7 @@ exports.updatePatient = async (req, res) => {
     }
 };
 
-exports.getDoctors = async (req, res) => {
+exports.getAllDoctors = async (req, res) => {
     try {
         // Get user from token
         const authHeader = req.headers.authorization;
@@ -114,7 +115,7 @@ exports.getDoctors = async (req, res) => {
                         availability: true,
                         DoctorSlot: {
                             where: { status: "AVAILABLE" },
-                            select: { id: true, date: true, startTime: true, duration: true, chat: true, voice: true, video: true, notes: true },
+                            select: { id: true, date: true, startTime: true, endTime: true, chat: true, voice: true, video: true, notes: true },
                         },
                     },
                 },
@@ -173,37 +174,34 @@ exports.getDoctors = async (req, res) => {
 };
 
 // =========================
-// Reserve a doctor slot
+// Reserve a doctor slot + Payment
 // =========================
 exports.reserveSlot = async (req, res) => {
     try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token provided" });
+        const patientUserId = req.user.id;
+        const { slotId, serviceType } = req.body; // CHAT | VOICE | VIDEO
 
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const patientUserId = decoded.id;
-
-        const { slotId, serviceType } = req.body; // serviceType: CHAT | VOICE | VIDEO
-        if (!slotId || !serviceType) {
+        if (!slotId || !serviceType)
             return res.status(400).json({ error: "slotId and serviceType are required" });
-        }
 
-        // Get patient
-        const patient = await prisma.user.findUnique({
+        // 1️⃣ Get patient info
+        const user = await prisma.user.findUnique({
             where: { id: patientUserId },
-            select: { patient: {
-                    select: { id: true },
-                } },
+            select: {
+                id: true,
+                fullName: true,
+                email: true,
+                patient: { select: { id: true, country: true } },
+            },
         });
 
-        if (!patient || !patient.patient) {
+        if (!user || !user.patient)
             return res.status(404).json({ error: "Patient not found" });
-        }
 
-        // Get slot
-        const slot = await prisma.doctorSlot.findUnique({
+        const patient = user.patient;
+
+        // 2️⃣ Get slot & pricing
+        const slot = await prisma.DoctorSlot.findUnique({
             where: { id: slotId },
             include: { doctor: { include: { pricing: true } } },
         });
@@ -212,40 +210,77 @@ exports.reserveSlot = async (req, res) => {
         if (slot.status !== "AVAILABLE")
             return res.status(400).json({ error: "Slot is already reserved" });
 
-        // Check if the doctor has pricing for the selected service
-        const pricingForService = slot.doctor.pricing.find(p => p.service === serviceType);
-        if (!pricingForService) {
-            return res.status(400).json({ error: `Service ${serviceType} not available for this doctor` });
-        }
+        if (
+            (serviceType === "CHAT" && !slot.chat) ||
+            (serviceType === "VOICE" && !slot.voice) ||
+            (serviceType === "VIDEO" && !slot.video)
+        ) return res.status(400).json({ error: `This slot does not offer ${serviceType}` });
 
+        // 3️⃣ Determine currency
+        let currency = "USD";
+        const country = patient.country?.toLowerCase();
+        if (country === "egypt") currency = "EGP";
+        else if (country === "saudi arabia") currency = "SAR";
+        else if (country === "uae") currency = "AED";
 
-        console.log(patient.patient);
-        // Create appointment
+        // 4️⃣ Get pricing
+        const pricing = slot.doctor.pricing.find(
+            p => p.service === serviceType && p.currency === currency
+        );
+        if (!pricing)
+            return res.status(400).json({ error: `Service ${serviceType} not available in ${currency}` });
+
+        // 5️⃣ Create appointment
         const appointment = await prisma.appointment.create({
             data: {
                 doctorId: slot.doctorId,
-                patientId: patientUserId,
+                patientId: patient.id,
                 appointmentType: serviceType,
                 date: slot.date,
                 notes: `Reserved via slot ${slotId}`,
             },
         });
 
-        // Reserve the slot
-        const updatedSlot = await prisma.DoctorSlot.update({
+        // 6️⃣ Reserve slot
+        await prisma.DoctorSlot.update({
             where: { id: slotId },
             data: { status: "RESERVED" },
         });
 
+        // 7️⃣ Create payment record
+        const payment = await prisma.payment.create({
+            data: {
+                appointmentId: appointment.id,
+                doctorId: slot.doctorId,
+                patientId: patient.id,
+                amount: pricing.price,
+                currency: pricing.currency,
+                status: "UNPAID",
+            },
+        });
+
+        // 8️⃣ PayMob integration
+        const authToken = await paymobService.getAuthToken();
+        const orderId = await paymobService.createOrder(authToken, pricing.price, pricing.currency, payment.id);
+        const paymentToken = await paymobService.getPaymentKey(authToken, orderId, pricing.price, pricing.currency, {
+            first_name: user.fullName || "Patient",
+            email: user.email,
+        });
+
+        // 9️⃣ Respond with appointment + payment info
         res.json({
-            message: "Slot reserved successfully",
+            message: "Slot reserved successfully. Complete payment to confirm.",
             appointment,
-            slot: updatedSlot,
-            price: pricingForService.price,
-            currency: pricingForService.currency,
+            slotId: slot.id,
+            payment: {
+                id: payment.id,
+                amount: pricing.price,
+                currency: pricing.currency,
+                paymobToken: paymentToken,
+            },
         });
     } catch (err) {
-        console.error(err);
+        console.error(err.response?.data || err);
         res.status(500).json({ error: "Server error" });
     }
 };
@@ -255,27 +290,21 @@ exports.reserveSlot = async (req, res) => {
 // =========================
 exports.cancelReservation = async (req, res) => {
     try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token provided" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const patientUserId = decoded.id;
+        const patientUserId = req.user.id;
 
         const { appointmentId } = req.body;
         if (!appointmentId) return res.status(400).json({ error: "appointmentId is required" });
 
         // Get patient
-        const patient = await prisma.user.findUnique({
+        const user = await prisma.user.findUnique({
             where: { id: patientUserId },
             select: { patient: true },
         });
 
-        if (!patient || !patient.patient) {
+        if (!user || !user.patient) {
             return res.status(404).json({ error: "Patient not found" });
         }
-
+        const patient=user.patient;
         // Get appointment
         const appointment = await prisma.appointment.findUnique({
             where: { id: appointmentId },
@@ -283,7 +312,7 @@ exports.cancelReservation = async (req, res) => {
         });
 
         if (!appointment) return res.status(404).json({ error: "Appointment not found" });
-        if (appointment.patientId !== patientUserId)
+        if (appointment.patientId !== patient.id)
             return res.status(403).json({ error: "This appointment does not belong to you" });
 
         // Update slot back to AVAILABLE
@@ -313,13 +342,7 @@ exports.cancelReservation = async (req, res) => {
 // =========================
 exports.getMyAppointments = async (req, res) => {
     try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token provided" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const patientUserId = decoded.id;
+        const patientUserId = req.user.id;
 
         // Get patient
         const user = await prisma.user.findUnique({
@@ -334,17 +357,14 @@ exports.getMyAppointments = async (req, res) => {
 
         // Fetch appointments
         const appointments = await prisma.appointment.findMany({
-            where: { patientId: patientUserId },
+            where: { patientId: patient.id },
             include: {
                 doctor: {
-                    include: {
-                        doctor: {
-                            include: {
                                 department: true, // this gives you the department object
-                            },
-                        },
+
+
                     },
-                },
+
             },
             orderBy: { date: "desc" },
         });
@@ -368,6 +388,114 @@ exports.getMyAppointments = async (req, res) => {
         }));
 
         res.json({ appointments: formatted });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+// =========================
+// Get My Doctors that I have Appointments With
+// =========================
+exports.getMyDoctors = async (req, res) => {
+    try {
+        const patientUserId = req.user.id;
+
+        // find patient by userId
+        const user = await prisma.user.findUnique({
+            where: { id: patientUserId },
+            include: { patient: true },
+        });
+
+        if (!user?.patient) {
+            return res.status(404).json({ error: "Patient not found" });
+        }
+
+        // get all appointments that are not cancelled
+        const appointments = await prisma.appointment.findMany({
+            where: {
+                patientId: user.patient.id,
+                NOT: { status: "CANCELLED" },
+            },
+            include: {
+                doctor: {
+                    include: {
+                        user: { select: { id: true, fullName: true, email: true } },
+                        department: true,
+                    },
+                },
+            },
+            orderBy: { date: "desc" },
+        });
+
+        // collect unique doctors
+        const doctorsMap = new Map();
+        appointments.forEach((appt) => {
+            const doc = appt.doctor;
+            if (!doctorsMap.has(doc.id)) {
+                doctorsMap.set(doc.id, {
+                    id: doc.id,
+                    fullName: doc.user.fullName,
+                    email: doc.user.email,
+                    department: doc.department?.name || null,
+                    lastAppointment: appt.date,
+                });
+            }
+        });
+
+        res.json({ doctors: Array.from(doctorsMap.values()) });
+    } catch (err) {
+        console.error("getMyDoctors error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// Upload Medical Record
+// =========================
+exports.uploadMedicalRecord = async (req, res) => {
+    try {
+        const patientUserId = req.user.id; // from auth middleware
+        const file = req.file;
+        const { type, notes } = req.body;
+
+        if (!file) return res.status(400).json({ error: "File is required" });
+
+        // Find patient
+        const patient = await prisma.patient.findUnique({
+            where: { userId: patientUserId },
+        });
+
+        if (!patient) return res.status(404).json({ error: "Patient not found" });
+
+        // Save record in DB
+        const record = await prisma.medicalRecord.create({
+            data: {
+                patientId: patient.id,
+                type,
+                fileUrl: `/uploads/${file.filename}`, // store path on server
+                notes,
+            },
+        });
+
+        res.json({ message: "Medical record uploaded", record });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+exports.getMedicalRecords = async (req, res) => {
+    try {
+        const patientUserId = req.user.id;
+
+        const patient = await prisma.patient.findUnique({
+            where: { userId: patientUserId },
+            include: { records: true },
+        });
+
+        if (!patient) return res.status(404).json({ error: "Patient not found" });
+
+        res.json({ records: patient.records });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Server error" });

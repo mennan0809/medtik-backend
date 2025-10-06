@@ -15,4 +15,14 @@ router.get('/users', adminController.getUsers);
 
 router.post("/toggle-ban", adminController.toggleBanUser);
 
+router.get("/doctor-update-requests", adminController.getDoctorUpdateRequests);
+
+// Accept doctor request
+router.post("/doctor-requests/:requestId/accept", adminController.acceptRequest);
+
+// Reject doctor request
+router.post("/doctor-requests/:requestId/reject", adminController.rejectRequest);
+
+router.delete("/doctor-requests/:requestId", adminController.deleteRequest);
+
 module.exports = router;

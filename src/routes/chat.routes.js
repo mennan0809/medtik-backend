@@ -1,11 +1,17 @@
 const express = require("express");
-const router = express.Router();
+const { verifyToken } = require("../middleware/auth");
 const chatController = require("../controllers/chat.controller");
 
-// Send a message (creates conversation if needed)
-router.post("/send", chatController.sendMessage);
+module.exports = (io, onlineUsers) => {
+    const router = express.Router();
 
-// Get all chats for a user
-router.get("/:userId", chatController.getChats);
+    // Wrap controller functions to inject io and onlineUsers
+    const sendMessage = (req, res) => chatController.sendMessage(io, onlineUsers)(req, res);
 
-module.exports = router;
+    // Routes
+    router.post("/send", verifyToken, sendMessage);
+    router.get("/history/:otherId", verifyToken, chatController.getHistory);
+    router.get("/conversations", verifyToken, chatController.getConversations);
+
+    return router;
+};
