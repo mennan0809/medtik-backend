@@ -7,5 +7,7 @@ router.get('/departments', verifyToken, sharedController.getDepartments);
 
 router.get("/departments/:id", verifyToken, sharedController.getDepartmentById);
 
-router.get("/transactions", verifyToken, sharedController.getTransactions);
+router.get("/transactions", verifyToken, sharedController.getPayments);
+
+router.get("/appointments", verifyToken, sharedController.getAppointments);
 module.exports = router;

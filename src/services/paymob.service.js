@@ -24,18 +24,48 @@ async function createOrder(authToken, amount, currency, merchantOrderId) {
     return res.data.id;
 }
 
-async function getPaymentKey(authToken, orderId, amount, currency) {
+async function getPaymentKey(authToken, orderId, amount, currency, billingData) {
     const res = await axios.post(
         "https://accept.paymob.com/api/acceptance/payment_keys",
         {
             amount_cents: amount * 100,
             currency,
             order_id: orderId,
-            integration_id: INTEGRATION_ID
+            integration_id: INTEGRATION_ID,
+            billing_data: billingData,
         },
         { headers: { Authorization: `Bearer ${authToken}` } }
     );
     return res.data.token;
 }
 
-module.exports = { getAuthToken, createOrder, getPaymentKey };
+async function refundPaymentThroughPaymob(transactionId, amount = null) {
+    try {
+        const authToken = await getAuthToken();
+
+        const payload = {
+            auth_token: authToken,
+            transaction_id: transactionId
+        };
+
+        if (amount) {
+            payload.amount_cents = amount * 100; // optional partial refund
+        }
+
+        const res = await axios.post(
+            "https://accept.paymob.com/api/acceptance/void_refund/refund",
+            payload,
+            { headers: { Authorization: `Bearer ${authToken}` } }
+        );
+
+        if (res.data && res.data.success) {
+            return res.data;
+        } else {
+            throw new Error("Refund failed: " + JSON.stringify(res.data));
+        }
+    } catch (err) {
+        console.error("Paymob refund error:", err.response?.data || err.message);
+        throw err;
+    }
+}
+module.exports = { getAuthToken, createOrder, getPaymentKey, refundPaymentThroughPaymob };

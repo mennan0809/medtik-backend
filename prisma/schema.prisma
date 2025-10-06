@@ -69,6 +69,7 @@ enum MessageType {
 enum PaymentStatus {
   UNPAID
   PAID
+  FAILED
   REFUNDED
 }
 
@@ -149,7 +150,7 @@ model Doctor {
 
   // Policies
   cancellationPolicy Int?     @default(2)
-  refundPolicy       Boolean? @default(true)
+  noShowPolicy       Boolean? @default(true)
   reschedulePolicy   Int?     @default(1)
 
   // Relations
@@ -161,8 +162,6 @@ model Doctor {
   Appointment Appointment[] @relation("DoctorAppointments")
 
   Review Review[]
-
-  Transaction Transaction[] @relation("DoctorTransactions")
 }
 
 // =========================
@@ -252,8 +251,6 @@ model Patient {
 
   Appointment Appointment[] @relation("PatientAppointments")
   Review      Review[]
-
-  Transaction Transaction[] @relation("PatientTransactions")
 }
 
 // =========================
@@ -265,22 +262,6 @@ model MedicalRecord {
   patient   Patient  @relation(fields: [patientId], references: [id])
   fileUrl   String
   createdAt DateTime @default(now())
-}
-
-// =========================
-// Transactions
-// =========================
-model Transaction {
-  id        Int      @id @default(autoincrement())
-  type      String
-  amount    Float
-  createdAt DateTime @default(now())
-
-  doctorId  Int
-  patientId Int
-
-  doctor  Doctor  @relation("DoctorTransactions", fields: [doctorId], references: [id])
-  patient Patient @relation("PatientTransactions", fields: [patientId], references: [id])
 }
 
 // =========================

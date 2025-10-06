@@ -24,6 +24,7 @@ const adminRoutes = require('./routes/admin.routes');
 const doctorRoutes = require('./routes/doctor.routes');
 const patientRoutes = require('./routes/patient.routes');
 const sharedRoutes = require('./routes/shared.routes');
+const paymentRoutes = require('./routes/payment.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/otp', otpRoutes);
@@ -31,6 +32,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/doctor', doctorRoutes);
 app.use('/api/patient', patientRoutes);
 app.use("/api/", sharedRoutes);
+app.use("/api/payment", paymentRoutes);
 
 // ===== Socket.IO setup =====
 const server = http.createServer(app);

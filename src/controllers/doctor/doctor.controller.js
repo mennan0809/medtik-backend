@@ -2,6 +2,7 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const prisma = require("../../config/db");
+const {refundPaymentThroughPaymob} = require("../../services/paymob.service");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -195,6 +196,7 @@ exports.addSlot = async (req, res) => {
     try {
         const doctorUserId = req.user.id; // doctor must be logged in
         const { date, startTime, endTime, chat, video, voice, notes } = req.body;
+        const now = new Date();
 
         if (!date || !startTime || !endTime) {
             return res.status(400).json({ error: "Date, startTime, and endTime are required" });
@@ -207,6 +209,9 @@ exports.addSlot = async (req, res) => {
         const slotStart = new Date(`${date}T${startTime}`);
         const slotEnd = new Date(`${date}T${endTime}`);
 
+        if (slotStart < now) {
+            return res.status(400).json({ error: "Cannot create a slot in the past" });
+        }
         if (slotStart >= slotEnd) {
             return res.status(400).json({ error: "Start time must be before end time" });
         }
@@ -310,6 +315,274 @@ exports.getMyPatients = async (req, res) => {
         res.json({ patients: Array.from(patientsMap.values()) });
     } catch (err) {
         console.error("getMyPatients error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+// =========================
+// Delete Slot
+// =========================
+exports.deleteSlot = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const { id } = req.params;
+
+        // Find doctor by user ID
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        // Find slot by ID
+        const slot = await prisma.doctorSlot.findUnique({
+            where: { id: parseInt(id) },
+        });
+
+        if (!slot) return res.status(404).json({ error: "Slot not found" });
+        if (slot.doctorId !== doctor.id)
+            return res.status(403).json({ error: "Unauthorized to delete this slot" });
+        if (slot.status === "RESERVED")
+            return res.status(400).json({ error: "Cannot delete a Reserved slot" });
+
+        // Delete slot
+        await prisma.doctorSlot.delete({
+            where: { id: parseInt(id) },
+        });
+
+        res.json({ message: "Slot deleted successfully" });
+    } catch (err) {
+        console.error("Error deleting slot:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+// =========================
+// Mark Appointment as No Show
+// =========================
+exports.markAppointmentNoShow = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const { appointmentId } = req.params;
+
+        if (!appointmentId)
+            return res.status(400).json({ error: "Appointment ID is required" });
+
+        const doctor = await prisma.doctor.findUnique({
+            where: { userId: doctorUserId },
+        });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const appointment = await prisma.appointment.findUnique({
+            where: { id: parseInt(appointmentId) },
+            include: { payment: true }, // assuming there's a payment relation
+        });
+
+        if (!appointment)
+            return res.status(404).json({ error: "Appointment not found" });
+
+        if (appointment.doctorId !== doctor.id)
+            return res.status(403).json({ error: "Unauthorized" });
+
+        if (appointment.status !== "CONFIRMED")
+            return res.status(400).json({ error: "Only CONFIRMED appointments can be marked as no-show" });
+
+        // Mark as no-show
+        const updatedAppointment = await prisma.appointment.update({
+            where: { id: appointment.id },
+            data: { status: "NO_SHOW" },
+        });
+
+        // Check policy
+        if (doctor.noShowPolicy) {
+            // trigger refund logic here
+            try {
+                // Example refund flow (stub)
+                const refundResponse = await refundPaymentThroughPaymob(appointment.payment.transactionId);
+                console.log("Refund success:", refundResponse);
+            } catch (refundErr) {
+                console.error("Refund failed:", refundErr);
+                return res.status(500).json({
+                    message: "Appointment marked as no-show, but refund failed",
+                    error: refundErr.message
+                });
+            }
+        }
+
+        res.json({
+            message: doctor.noShowPolicy
+                ? "Appointment marked as no-show and refund processed"
+                : "Appointment marked as no-show (no refund per policy)",
+            appointment: updatedAppointment,
+        });
+
+    } catch (err) {
+        console.error("markAppointmentNoShow error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// Mark Appointment as Completed
+// =========================
+exports.markAppointmentCompleted = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const { appointmentId } = req.params;
+
+        if (!appointmentId)
+            return res.status(400).json({ error: "Appointment ID is required" });
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const appointment = await prisma.appointment.findUnique({
+            where: { id: parseInt(appointmentId) },
+        });
+
+        if (!appointment)
+            return res.status(404).json({ error: "Appointment not found" });
+
+        if (appointment.doctorId !== doctor.id)
+            return res.status(403).json({ error: "Unauthorized to modify this appointment" });
+
+        if (appointment.status !== "CONFIRMED")
+            return res.status(400).json({ error: "Only CONFIRMED appointments can be marked as no-show" });
+
+        const updated = await prisma.appointment.update({
+            where: { id: appointment.id },
+            data: { status: "COMPLETED" },
+        });
+
+        res.json({ message: "Appointment marked as completed", appointment: updated });
+    } catch (err) {
+        console.error("markAppointmentCompleted error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// Cancel Appointment (Doctor)
+// =========================
+exports.cancelAppointment = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const { appointmentId } = req.params;
+
+        if (!appointmentId) return res.status(400).json({ error: "Appointment ID is required" });
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const appointment = await prisma.appointment.findUnique({
+            where: { id: parseInt(appointmentId) },
+            include: { payment: true },
+        });
+
+        if (!appointment) return res.status(404).json({ error: "Appointment not found" });
+        if (appointment.doctorId !== doctor.id)
+            return res.status(403).json({ error: "Unauthorized to cancel this appointment" });
+
+        // Free the slot
+        await prisma.doctorSlot.updateMany({
+            where: { doctorId: doctor.id, date: appointment.date },
+            data: { status: "AVAILABLE" },
+        });
+
+        // Mark appointment cancelled
+        const cancelledAppointment = await prisma.appointment.update({
+            where: { id: appointment.id },
+            data: { status: "CANCELLED" },
+        });
+
+        // Refund payment if exists
+        if (appointment.payment) {
+            try {
+                await refundPaymentThroughPaymob(appointment.payment.transactionId);
+                console.log("Refund successful for appointment", appointment.id);
+            } catch (err) {
+                console.error("Refund failed:", err);
+            }
+        }
+
+        res.json({ message: "Appointment cancelled and refund processed", appointment: cancelledAppointment });
+    } catch (err) {
+        console.error("cancelAppointment error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// Reschedule Appointment (Doctor)
+// =========================
+exports.rescheduleAppointment = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const { appointmentId } = req.params;
+        const { newDate, newStartTime, newEndTime } = req.body;
+
+        if (!appointmentId || !newDate || !newStartTime || !newEndTime)
+            return res.status(400).json({ error: "appointmentId, newDate, newStartTime, newEndTime are required" });
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const appointment = await prisma.appointment.findUnique({
+            where: { id: parseInt(appointmentId) },
+        });
+
+        if (!appointment) return res.status(404).json({ error: "Appointment not found" });
+        if (appointment.doctorId !== doctor.id)
+            return res.status(403).json({ error: "Unauthorized to reschedule this appointment" });
+
+        // Convert new start/end times to Date objects
+        const newStart = new Date(`${newDate}T${newStartTime}`);
+        const newEnd = new Date(`${newDate}T${newEndTime}`);
+        if (newStart >= newEnd) return res.status(400).json({ error: "Start time must be before end time" });
+
+        // Check for overlapping RESERVED slots
+        const overlappingReserved = await prisma.doctorSlot.findFirst({
+            where: {
+                doctorId: doctor.id,
+                date: new Date(newDate),
+                status: "RESERVED",
+                AND: [
+                    { startTime: { lt: newEnd } },
+                    { endTime: { gt: newStart } }
+                ]
+            }
+        });
+
+        if (overlappingReserved)
+            return res.status(400).json({ error: "Cannot reschedule: doctor already has a reserved slot in this time" });
+
+        // Remove any AVAILABLE slot that overlaps the new time
+        await prisma.doctorSlot.deleteMany({
+            where: {
+                doctorId: doctor.id,
+                date: new Date(newDate),
+                status: "AVAILABLE",
+                AND: [
+                    { startTime: { lt: newEnd } },
+                    { endTime: { gt: newStart } }
+                ]
+            }
+        });
+
+        // Free old slot if it exists
+        await prisma.doctorSlot.updateMany({
+            where: { doctorId: doctor.id, date: appointment.date },
+            data: { status: "AVAILABLE" },
+        });
+
+        // Update appointment with new date/time
+        const updatedAppointment = await prisma.appointment.update({
+            where: { id: appointment.id },
+            data: {
+                date: new Date(newDate),
+                notes: `Rescheduled to ${newDate} ${newStartTime}-${newEndTime}`,
+            },
+        });
+
+        res.json({ message: "Appointment rescheduled successfully", appointment: updatedAppointment });
+
+    } catch (err) {
+        console.error("rescheduleAppointment error:", err);
         res.status(500).json({ error: "Server error" });
     }
 };
