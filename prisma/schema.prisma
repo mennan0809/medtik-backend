@@ -36,6 +36,7 @@ enum Currency {
 }
 
 enum AppointmentStatus {
+  PENDING_PAYMENT
   CONFIRMED
   CANCELLED
   COMPLETED
@@ -114,7 +115,6 @@ model User {
 
   conversations Conversation[] @relation("ConversationParticipants")
 
-  Payment        Payment[]
   conversationId Int?
 }
 
@@ -277,15 +277,15 @@ model Appointment {
   patient Patient @relation("PatientAppointments", fields: [patientId], references: [id])
 
   appointmentType ServiceType
-  status          AppointmentStatus @default(CONFIRMED)
+  status          AppointmentStatus @default(PENDING_PAYMENT)
 
   date      DateTime
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   notes         String?
-  payments      Payment[]
   consultations Consultation[]
+  Payment       Payment?
 }
 
 // =========================
@@ -357,7 +357,7 @@ model Message {
 model Payment {
   id            Int          @id @default(autoincrement())
   appointment   Appointment? @relation(fields: [appointmentId], references: [id])
-  appointmentId Int?
+  appointmentId Int?         @unique
 
   doctor   Doctor @relation(fields: [doctorId], references: [id])
   doctorId Int
@@ -372,8 +372,6 @@ model Payment {
   paymobTransactionId String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-  User                User?    @relation(fields: [userId], references: [id])
-  userId              Int?
 }
 
 // =========================

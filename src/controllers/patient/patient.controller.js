@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const paymobService = require("../../services/paymob.service");
 const { convertToEGP } = require("../../services/currency.service");
+const {pushNotification} = require("../../utils/notifications");
 const JWT_SECRET = process.env.JWT_SECRET;
 
 
@@ -106,7 +107,7 @@ exports.getAllDoctors = async (req, res) => {
                         languages: true,
                         department: { select: { name: true } },
                         cancellationPolicy: true,
-                        refundPolicy: true,
+                        noShowPolicy: true,
                         reschedulePolicy: true,
                         pricing: {
                             where: { currency },
@@ -172,7 +173,6 @@ exports.getAllDoctors = async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 };
-
 // =========================
 // Reserve a doctor slot + Payment (PayMob)
 // =========================
@@ -181,9 +181,11 @@ exports.reserveSlot = async (req, res) => {
         const patientUserId = req.user.id;
         const { slotId, serviceType } = req.body;
 
-        if (!slotId || !serviceType)
+        if (!slotId || !serviceType) {
             return res.status(400).json({ error: "slotId and serviceType are required" });
+        }
 
+        // Get patient info
         const user = await prisma.user.findUnique({
             where: { id: patientUserId },
             select: {
@@ -193,11 +195,11 @@ exports.reserveSlot = async (req, res) => {
                 patient: { select: { id: true, country: true, phone: true } },
             },
         });
-        if (!user?.patient)
-            return res.status(404).json({ error: "Patient not found" });
 
+        if (!user?.patient) return res.status(404).json({ error: "Patient not found" });
         const patient = user.patient;
 
+        // Transaction: reserve slot and create appointment
         const { appointment, slot, pricing, currency } = await prisma.$transaction(async (tx) => {
             const slot = await tx.doctorSlot.findUnique({
                 where: { id: slotId },
@@ -207,41 +209,47 @@ exports.reserveSlot = async (req, res) => {
             if (!slot) throw new Error("Slot not found");
             if (slot.status !== "AVAILABLE") throw new Error("Slot already reserved");
 
+            // Determine currency based on patient country
             let currency = "USD";
             const country = patient.country?.toLowerCase();
             if (country === "egypt") currency = "EGP";
             else if (country === "saudi arabia") currency = "SAR";
             else if (country === "uae") currency = "AED";
 
+            // Get pricing for selected service & currency
             const pricing = slot.doctor.pricing.find(
                 (p) => p.service === serviceType && p.currency === currency
             );
-            if (!pricing)
-                throw new Error(`Service ${serviceType} not available in ${currency}`);
 
+            if (!pricing) throw new Error(`Service ${serviceType} not available in ${currency}`);
+
+            // Reserve slot
             const updatedSlot = await tx.doctorSlot.update({
                 where: { id: slotId },
                 data: { status: "RESERVED" },
             });
 
+            // Create appointment
             const appointment = await tx.appointment.create({
                 data: {
                     doctorId: slot.doctorId,
                     patientId: patient.id,
                     appointmentType: serviceType,
-                    date: slot.date,
-                    notes: `Reserved via slot ${slotId}`,
+                    date: slot.startTime
                 },
             });
 
             return { appointment, slot: updatedSlot, pricing, currency };
         });
 
+        // Convert amount to EGP if needed
         let amount = pricing.price;
         if (currency !== "EGP") {
+            if (!convertToEGP) throw new Error("convertToEGP function is not defined");
             amount = await convertToEGP(pricing.price, currency);
         }
 
+        // Create payment record
         const payment = await prisma.payment.create({
             data: {
                 appointmentId: appointment.id,
@@ -253,15 +261,11 @@ exports.reserveSlot = async (req, res) => {
             },
         });
 
+        // PayMob: get auth token & payment token
         const authToken = await paymobService.getAuthToken();
         const uniqueMerchantId = `PAY-${payment.id}-${Date.now()}`;
 
-        const orderId = await paymobService.createOrder(
-            authToken,
-            amount,
-            "EGP",
-            uniqueMerchantId
-        );
+        const orderId = await paymobService.createOrder(authToken, amount, "EGP", uniqueMerchantId);
 
         const paymentToken = await paymobService.getPaymentKey(
             authToken,
@@ -282,11 +286,9 @@ exports.reserveSlot = async (req, res) => {
             }
         );
 
-        // ✅ Ready-to-redirect Paymob payment URL
-        const IFRAME_ID = process.env.PAYMOB_IFRAME_ID; // store it in your .env
+        const IFRAME_ID = process.env.PAYMOB_IFRAME_ID;
         const redirectUrl = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentToken}`;
 
-        // 🧠 Return redirect link only
         res.json({
             message: "Slot reserved successfully. Redirect to payment URL.",
             redirectUrl,
@@ -359,6 +361,7 @@ exports.getMyAppointments = async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 };
+
 // =========================
 // Get My Doctors that I have Appointments With
 // =========================
@@ -499,83 +502,123 @@ exports.cancelReservation = async (req, res) => {
         const { appointmentId } = req.body;
 
         if (!appointmentId)
-            return res.status(400).json({ error: "appointmentId is required" });
+            return res.status(400).json({ error: 'appointmentId is required' });
 
-        // Get patient
         const user = await prisma.user.findUnique({
             where: { id: patientUserId },
             include: { patient: true },
         });
-
         if (!user?.patient)
-            return res.status(404).json({ error: "Patient not found" });
+            return res.status(404).json({ error: 'Patient not found' });
 
-        const patient = user.patient;
-
-        // Get appointment + related doctor + payment
         const appointment = await prisma.appointment.findUnique({
             where: { id: appointmentId },
             include: {
-                doctor: true,
-                payment: true,
+                doctor: { include: { user: true } },
+                Payment: true,
             },
         });
-
         if (!appointment)
-            return res.status(404).json({ error: "Appointment not found" });
+            return res.status(404).json({ error: 'Appointment not found' });
+        if (appointment.patientId !== user.patient.id)
+            return res.status(403).json({ error: 'This appointment does not belong to you' });
+        if (['PENDING_PAYMENT','CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(appointment.status))
+            return res.status(400).json({ error: 'This appointment cannot be cancelled' });
 
-        if (appointment.patientId !== patient.id)
-            return res.status(403).json({ error: "This appointment does not belong to you" });
-
-        if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(appointment.status))
-            return res.status(400).json({ error: "This appointment cannot be cancelled" });
-
-        // Time difference in hours between now and appointment time
         const now = new Date();
         const appointmentTime = new Date(appointment.date);
         const diffHours = (appointmentTime - now) / (1000 * 60 * 60);
-
         const canRefund = diffHours >= appointment.doctor.cancellationPolicy;
 
-        // Update appointment + free up slot
+        let refundSuccess = false;
+
         await prisma.$transaction(async (tx) => {
+            // Cancel appointment
             await tx.appointment.update({
                 where: { id: appointment.id },
-                data: { status: "CANCELLED" },
+                data: { status: 'CANCELLED' },
             });
 
-            // Free the slot
+            // Free the doctor slot
             await tx.doctorSlot.updateMany({
-                where: {
-                    doctorId: appointment.doctorId,
-                    date: appointment.date,
-                },
-                data: { status: "AVAILABLE" },
+                where: { doctorId: appointment.doctorId, startTime: appointment.date },
+                data: { status: 'AVAILABLE' },
             });
 
-            // Handle refund if applicable
-            if (canRefund && appointment.payment) {
-                try {
-                    await paymobService.refundPaymentThroughPaymob(appointment.payment.transactionId);
-                    await tx.payment.update({
-                        where: { id: appointment.payment.id },
-                        data: { status: "REFUNDED" },
-                    });
-                } catch (refundErr) {
-                    console.error("Refund failed:", refundErr);
-                    throw new Error("Appointment cancelled, but refund failed");
-                }
-            }
+            // Only update payment status here if you want, or do it after refund
+            // Better: leave it for after refund
         });
 
+// ------------------------
+// Refund outside transaction
+// ------------------------
+        if (canRefund && appointment.Payment) {
+            try {
+                await paymobService.refundPaymentThroughPaymob(
+                    appointment.Payment.paymobTransactionId
+                );
+
+                await prisma.payment.update({
+                    where: { id: appointment.Payment.id },
+                    data: { status: 'REFUNDED' },
+                });
+
+                refundSuccess = true;
+            } catch (refundErr) {
+                console.error('Refund failed:', refundErr);
+            }
+        }
+
+
+        // ===============================
+        // 🔔 Notifications & Emails
+        // ===============================
+
+        // Notify doctor
+        await pushNotification({
+            userId: appointment.doctor.user.id,
+            type: 'APPOINTMENT',
+            title: 'Appointment Cancelled',
+            message: `The appointment with ${user.fullName} on ${new Date(
+                appointment.date
+            ).toLocaleString()} has been cancelled.`,
+            redirectUrl: `/doctor/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id, patientId: user.patient.id },
+            email: appointment.doctor.user.email,
+        });
+
+        // Notify patient
+        await pushNotification({
+            userId: patientUserId,
+            type: 'APPOINTMENT',
+            title: 'Appointment Cancelled',
+            message: `Your appointment with Dr. ${appointment.doctor.user.fullName} has been cancelled.`,
+            redirectUrl: `/patient/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id, doctorId: appointment.doctorId },
+            email: user.email,
+        });
+
+        // Notify refund if applicable
+        if (refundSuccess) {
+            await pushNotification({
+                userId: patientUserId,
+                type: 'PAYMENT',
+                title: 'Refund Processed',
+                message: `Your payment for the cancelled appointment with Dr. ${appointment.doctor.user.fullName} has been refunded.`,
+                redirectUrl: `/patient/payments/${appointment.payment.id}`,
+                metadata: { paymentId: appointment.payment.id },
+                email: user.email,
+            });
+
+        }
         res.json({
             message: canRefund
-                ? "Appointment cancelled successfully and refund processed"
-                : "Appointment cancelled successfully (no refund due to policy)",
+                ? 'Appointment cancelled successfully and refund processed'
+                : 'Appointment cancelled successfully (no refund due to policy)',
         });
     } catch (err) {
-        console.error("cancelReservation error:", err);
-        res.status(500).json({ error: "Server error" });
+        console.error('cancelReservation error:', err);
+        res.status(500).json({ error: 'Server error' });
     }
 };
 
@@ -585,78 +628,106 @@ exports.cancelReservation = async (req, res) => {
 exports.rescheduleAppointment = async (req, res) => {
     try {
         const { appointmentId, newSlotId } = req.body;
-        const userId = req.user.id; // patient must be logged in
+        const userId = req.user.id;
 
         const appointment = await prisma.appointment.findUnique({
             where: { id: appointmentId },
             include: {
                 slot: true,
-                doctor: true,
-                patient: { include: { user: true } }
-            }
+                doctor: { include: { user: true } },
+                patient: { include: { user: true } },
+            },
         });
 
-        if (!appointment) return res.status(404).json({ error: "Appointment not found" });
-        if (appointment.status !== "CONFIRMED")
-            return res.status(400).json({ error: "Only confirmed appointments can be rescheduled" });
+        if (!appointment)
+            return res.status(404).json({ error: 'Appointment not found' });
+        if (appointment.status !== 'CONFIRMED')
+            return res
+                .status(400)
+                .json({ error: 'Only confirmed appointments can be rescheduled' });
 
-        // Ensure patient owns this appointment
         const patient = await prisma.patient.findUnique({ where: { userId } });
         if (appointment.patientId !== patient.id)
-            return res.status(403).json({ error: "You cannot reschedule this appointment" });
+            return res
+                .status(403)
+                .json({ error: 'You cannot reschedule this appointment' });
 
-        const doctor = await prisma.doctor.findUnique({
-            where: { id: appointment.doctorId },
-            select: { reschedulePolicy: true }
-        });
-
+        const doctor = appointment.doctor;
         const policyHours = doctor.reschedulePolicy || 0;
         const now = new Date();
-        const timeUntilAppointment = (appointment.slot.startTime - now) / (1000 * 60 * 60);
+        const timeUntilAppointment =
+            (appointment.slot.startTime - now) / (1000 * 60 * 60);
 
         if (timeUntilAppointment < policyHours) {
             return res.status(400).json({
-                error: `Cannot reschedule less than ${policyHours} hours before appointment`
+                error: `Cannot reschedule less than ${policyHours} hours before appointment`,
             });
         }
 
-        // Validate new slot
         const newSlot = await prisma.doctorSlot.findUnique({
             where: { id: newSlotId },
-            include: { doctor: true }
+            include: { doctor: true },
         });
 
-        if (!newSlot) return res.status(404).json({ error: "New slot not found" });
+        if (!newSlot)
+            return res.status(404).json({ error: 'New slot not found' });
         if (newSlot.doctorId !== appointment.doctorId)
-            return res.status(400).json({ error: "Slot must belong to the same doctor" });
-        if (newSlot.isBooked) return res.status(400).json({ error: "Slot is already booked" });
+            return res
+                .status(400)
+                .json({ error: 'Slot must belong to the same doctor' });
+        if (newSlot.isBooked)
+            return res.status(400).json({ error: 'Slot is already booked' });
         if (newSlot.startTime < new Date())
-            return res.status(400).json({ error: "Cannot reschedule to a past slot" });
+            return res.status(400).json({ error: 'Cannot reschedule to a past slot' });
 
-        // Update appointment
         await prisma.$transaction([
             prisma.appointment.update({
                 where: { id: appointmentId },
                 data: {
                     slotId: newSlotId,
                     date: newSlot.date,
-                    status: "CONFIRMED",
-                }
+                    status: 'CONFIRMED',
+                },
             }),
             prisma.doctorSlot.update({
                 where: { id: appointment.slotId },
-                data: { isBooked: false }
+                data: { isBooked: false },
             }),
             prisma.doctorSlot.update({
                 where: { id: newSlotId },
-                data: { isBooked: true }
-            })
+                data: { isBooked: true },
+            }),
         ]);
 
-        res.json({ message: "Appointment rescheduled successfully" });
+        res.json({ message: 'Appointment rescheduled successfully' });
 
+        // 🔔 Notify doctor
+        await pushNotification({
+            userId: doctor.user.id,
+            type: 'APPOINTMENT',
+            title: 'Appointment Rescheduled',
+            message: `${appointment.patient.user.fullName} rescheduled their appointment to ${new Date(
+                newSlot.date
+            ).toLocaleString()}.`,
+            redirectUrl: `/doctor/appointments/${appointmentId}`,
+            metadata: { appointmentId, newSlotId },
+            email: doctor.user.email,
+        });
+
+        // 🔔 Notify patient
+        await pushNotification({
+            userId: patient.userId,
+            type: 'APPOINTMENT',
+            title: 'Appointment Rescheduled',
+            message: `Your appointment with Dr. ${doctor.user.fullName} was rescheduled to ${new Date(
+                newSlot.date
+            ).toLocaleString()}.`,
+            redirectUrl: `/patient/appointments/${appointmentId}`,
+            metadata: { appointmentId, newSlotId },
+            email: appointment.patient.user.email,
+        });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: 'Server error' });
     }
 };

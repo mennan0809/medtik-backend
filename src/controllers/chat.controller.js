@@ -1,5 +1,6 @@
-const prisma = require("../config/db");
+const prisma = require('../config/db');
 
+// ===== Helper to find or create conversation =====
 const getOrCreateConversation = async (sId, rId) => {
     let conversation = await prisma.conversation.findFirst({
         where: {
@@ -20,11 +21,12 @@ const getOrCreateConversation = async (sId, rId) => {
     return conversation;
 };
 
-// Send a message (senderId comes from token)
+// ===== Send Message =====
 exports.sendMessage = (io, onlineUsers) => async (req, res) => {
     try {
-        const senderId = req.user.id; // <--- use authenticated user
+        const senderId = req.user.id;
         const { receiverId, content, type } = req.body;
+
         const sId = Number(senderId);
         const rId = Number(receiverId);
 
@@ -40,9 +42,51 @@ exports.sendMessage = (io, onlineUsers) => async (req, res) => {
             include: { sender: { select: { id: true, fullName: true } } },
         });
 
-        // Real-time push
-        const receiverSocket = onlineUsers.get(rId);
-        if (receiverSocket) io.to(receiverSocket).emit('receiveMessage', message);
+        const receiverSocketId = onlineUsers.get(rId);
+        if (receiverSocketId) {
+            const receiverSocket = io.sockets.sockets.get(receiverSocketId);
+
+            if (receiverSocket && receiverSocket.activeConversation === conversation.id) {
+                // 👀 Receiver is actively viewing the chat
+                await prisma.message.update({
+                    where: { id: message.id },
+                    data: { seen: true },
+                });
+                io.to(receiverSocketId).emit('receiveMessage', message);
+            } else {
+                // 🔔 Receiver NOT in chat
+                io.to(receiverSocketId).emit('receiveMessage', message);
+                io.to(receiverSocketId).emit('notification', {
+                    type: 'MESSAGE',
+                    title: 'New Message',
+                    message: `${message.sender.fullName} sent you a message.`,
+                    redirectUrl: `/chat/${sId}`,
+                });
+
+                await prisma.notification.create({
+                    data: {
+                        userId: rId,
+                        type: 'MESSAGE',
+                        title: 'New Message',
+                        message: `${message.sender.fullName} sent you a message.`,
+                        redirectUrl: `/chat/${sId}`,
+                        metadata: { senderId: sId, messageId: message.id },
+                    },
+                });
+            }
+        } else {
+            // 💾 Receiver offline → just save notification
+            await prisma.notification.create({
+                data: {
+                    userId: rId,
+                    type: 'MESSAGE',
+                    title: 'New Message',
+                    message: `${message.sender.fullName} sent you a message.`,
+                    redirectUrl: `/chat/${sId}`,
+                    metadata: { senderId: sId, messageId: message.id },
+                },
+            });
+        }
 
         res.json({ success: true, message });
     } catch (err) {
@@ -51,10 +95,10 @@ exports.sendMessage = (io, onlineUsers) => async (req, res) => {
     }
 };
 
-// Get chat history
+// ===== Get History =====
 exports.getHistory = async (req, res) => {
     try {
-        const userId = req.user.id; // <--- authenticated user
+        const userId = req.user.id;
         const otherId = Number(req.params.otherId);
 
         const conversation = await prisma.conversation.findFirst({
@@ -73,35 +117,31 @@ exports.getHistory = async (req, res) => {
     }
 };
 
-// Get all conversations for the authenticated user with last message
+// ===== Get Conversations =====
 exports.getConversations = async (req, res) => {
     try {
-        const userId = req.user.id; // sender from token
+        const userId = req.user.id;
 
-        // Find conversations where user is a participant
         const conversations = await prisma.conversation.findMany({
             where: {
-                participants: { some: { id: userId } }
+                participants: { some: { id: userId } },
             },
             include: {
                 participants: true,
-                messages: {
-                    orderBy: { createdAt: 'desc' },
-                    take: 1 // only last message
-                }
+                messages: { orderBy: { createdAt: 'desc' }, take: 1 },
             },
-            orderBy: {
-                updatedAt: 'desc' // recent conversation first
-            }
+            orderBy: { updatedAt: 'desc' },
         });
 
-        // Format data: show other user(s) and last message
-        const formatted = conversations.map(conv => {
-            const otherParticipants = conv.participants.filter(p => p.id !== userId);
+        const formatted = conversations.map((conv) => {
+            const others = conv.participants.filter((p) => p.id !== userId);
             return {
                 conversationId: conv.id,
-                participants: otherParticipants.map(p => ({ id: p.id, fullName: p.fullName })),
-                lastMessage: conv.messages[0] || null
+                participants: others.map((p) => ({
+                    id: p.id,
+                    fullName: p.fullName,
+                })),
+                lastMessage: conv.messages[0] || null,
             };
         });
 

@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const prisma = require("../../config/db");
 const {refundPaymentThroughPaymob} = require("../../services/paymob.service");
+const {pushNotification} = require("../../utils/notifications");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -318,6 +319,7 @@ exports.getMyPatients = async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 };
+
 // =========================
 // Delete Slot
 // =========================
@@ -352,6 +354,7 @@ exports.deleteSlot = async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 };
+
 // =========================
 // Mark Appointment as No Show
 // =========================
@@ -365,12 +368,16 @@ exports.markAppointmentNoShow = async (req, res) => {
 
         const doctor = await prisma.doctor.findUnique({
             where: { userId: doctorUserId },
+            include: { user: true },
         });
         if (!doctor) return res.status(404).json({ error: "Doctor not found" });
 
         const appointment = await prisma.appointment.findUnique({
             where: { id: parseInt(appointmentId) },
-            include: { payment: true }, // assuming there's a payment relation
+            include: {
+                payment: true,
+                patient: { include: { user: true } },
+            },
         });
 
         if (!appointment)
@@ -388,20 +395,56 @@ exports.markAppointmentNoShow = async (req, res) => {
             data: { status: "NO_SHOW" },
         });
 
+        let refundSuccess = false;
+
         // Check policy
-        if (doctor.noShowPolicy) {
-            // trigger refund logic here
+        if (doctor.noShowPolicy && appointment.payment) {
             try {
-                // Example refund flow (stub)
                 const refundResponse = await refundPaymentThroughPaymob(appointment.payment.transactionId);
                 console.log("Refund success:", refundResponse);
+                refundSuccess = true;
             } catch (refundErr) {
                 console.error("Refund failed:", refundErr);
-                return res.status(500).json({
-                    message: "Appointment marked as no-show, but refund failed",
-                    error: refundErr.message
-                });
             }
+        }
+
+        // ===============================
+        // 🔔 Notifications & Emails
+        // ===============================
+
+        // Notify patient
+        await pushNotification({
+            userId: appointment.patient.user.id,
+            type: "APPOINTMENT",
+            title: "Appointment Marked as No-Show",
+            message: `Dr. ${doctor.user.fullName} marked your appointment as no-show.`,
+            redirectUrl: `/patient/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id },
+            email: appointment.patient.user.email,
+        });
+
+        // Notify doctor (for confirmation)
+        await pushNotification({
+            userId: doctor.userId,
+            type: "APPOINTMENT",
+            title: "Appointment Marked as No-Show",
+            message: `You marked the appointment with ${appointment.patient.user.fullName} as no-show.`,
+            redirectUrl: `/doctor/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id },
+            email: doctor.user.email,
+        });
+
+        // Notify refund if applicable
+        if (refundSuccess) {
+            await pushNotification({
+                userId: appointment.patient.user.id,
+                type: "PAYMENT",
+                title: "Refund Processed",
+                message: `Your payment for the appointment with Dr. ${doctor.user.fullName} has been refunded.`,
+                redirectUrl: `/patient/payments/${appointment.payment.id}`,
+                metadata: { paymentId: appointment.payment.id },
+                email: appointment.patient.user.email,
+            });
         }
 
         res.json({
@@ -417,6 +460,7 @@ exports.markAppointmentNoShow = async (req, res) => {
     }
 };
 
+
 // =========================
 // Mark Appointment as Completed
 // =========================
@@ -428,11 +472,15 @@ exports.markAppointmentCompleted = async (req, res) => {
         if (!appointmentId)
             return res.status(400).json({ error: "Appointment ID is required" });
 
-        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        const doctor = await prisma.doctor.findUnique({
+            where: { userId: doctorUserId },
+            include: { user: true },
+        });
         if (!doctor) return res.status(404).json({ error: "Doctor not found" });
 
         const appointment = await prisma.appointment.findUnique({
             where: { id: parseInt(appointmentId) },
+            include: { patient: { include: { user: true } } },
         });
 
         if (!appointment)
@@ -442,11 +490,37 @@ exports.markAppointmentCompleted = async (req, res) => {
             return res.status(403).json({ error: "Unauthorized to modify this appointment" });
 
         if (appointment.status !== "CONFIRMED")
-            return res.status(400).json({ error: "Only CONFIRMED appointments can be marked as no-show" });
+            return res.status(400).json({ error: "Only CONFIRMED appointments can be marked as completed" });
 
         const updated = await prisma.appointment.update({
             where: { id: appointment.id },
             data: { status: "COMPLETED" },
+        });
+
+        // ===============================
+        // 🔔 Notifications & Emails
+        // ===============================
+
+        // Notify patient
+        await pushNotification({
+            userId: appointment.patient.user.id,
+            type: "APPOINTMENT",
+            title: "Appointment Completed",
+            message: `Your appointment with Dr. ${doctor.user.fullName} has been marked as completed.`,
+            redirectUrl: `/patient/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id },
+            email: appointment.patient.user.email,
+        });
+
+        // Notify doctor
+        await pushNotification({
+            userId: doctor.userId,
+            type: "APPOINTMENT",
+            title: "Appointment Completed",
+            message: `You marked the appointment with ${appointment.patient.user.fullName} as completed.`,
+            redirectUrl: `/doctor/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id },
+            email: doctor.user.email,
         });
 
         res.json({ message: "Appointment marked as completed", appointment: updated });
@@ -464,17 +538,26 @@ exports.cancelAppointment = async (req, res) => {
         const doctorUserId = req.user.id;
         const { appointmentId } = req.params;
 
-        if (!appointmentId) return res.status(400).json({ error: "Appointment ID is required" });
+        if (!appointmentId)
+            return res.status(400).json({ error: "Appointment ID is required" });
 
-        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        const doctor = await prisma.doctor.findUnique({
+            where: { userId: doctorUserId },
+            include: { user: true },
+        });
         if (!doctor) return res.status(404).json({ error: "Doctor not found" });
 
         const appointment = await prisma.appointment.findUnique({
             where: { id: parseInt(appointmentId) },
-            include: { payment: true },
+            include: {
+                payment: true,
+                patient: { include: { user: true } },
+            },
         });
 
-        if (!appointment) return res.status(404).json({ error: "Appointment not found" });
+        if (!appointment)
+            return res.status(404).json({ error: "Appointment not found" });
+
         if (appointment.doctorId !== doctor.id)
             return res.status(403).json({ error: "Unauthorized to cancel this appointment" });
 
@@ -484,23 +567,72 @@ exports.cancelAppointment = async (req, res) => {
             data: { status: "AVAILABLE" },
         });
 
-        // Mark appointment cancelled
-        const cancelledAppointment = await prisma.appointment.update({
-            where: { id: appointment.id },
+        // Cancel appointment
+        await prisma.appointment.update({
+            where: { id: parseInt(appointmentId) },
             data: { status: "CANCELLED" },
         });
 
-        // Refund payment if exists
+        let refundSuccess = false;
         if (appointment.payment) {
             try {
                 await refundPaymentThroughPaymob(appointment.payment.transactionId);
-                console.log("Refund successful for appointment", appointment.id);
+                await prisma.payment.update({
+                    where: { id: appointment.payment.id },
+                    data: { status: "REFUNDED" },
+                });
+                refundSuccess = true;
             } catch (err) {
                 console.error("Refund failed:", err);
             }
         }
 
-        res.json({ message: "Appointment cancelled and refund processed", appointment: cancelledAppointment });
+        // ===============================
+        // 🔔 Notifications & Emails
+        // ===============================
+
+        // Notify patient
+        await pushNotification({
+            userId: appointment.patient.user.id,
+            type: 'APPOINTMENT',
+            title: 'Appointment Cancelled',
+            message: `Your appointment with Dr. ${doctor.user.fullName} on ${new Date(
+                appointment.date
+            ).toLocaleString()} has been cancelled by the doctor.`,
+            redirectUrl: `/patient/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id, doctorId: doctor.id },
+            email: appointment.patient.user.email,
+        });
+
+        // Notify doctor
+        await pushNotification({
+            userId: doctor.user.id,
+            type: 'APPOINTMENT',
+            title: 'Appointment Cancelled',
+            message: `You cancelled your appointment with ${appointment.patient.user.fullName}.`,
+            redirectUrl: `/doctor/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id, patientId: appointment.patient.user.id },
+            email: doctor.user.email,
+        });
+
+        // Notify refund if applicable
+        if (refundSuccess) {
+            await pushNotification({
+                userId: appointment.patient.user.id,
+                type: 'PAYMENT',
+                title: 'Refund Processed',
+                message: `Your payment for the cancelled appointment with Dr. ${doctor.user.fullName} has been refunded.`,
+                redirectUrl: `/patient/payments/${appointment.payment.id}`,
+                metadata: { paymentId: appointment.payment.id },
+                email: appointment.patient.user.email,
+            });
+        }
+
+        res.json({
+            message: refundSuccess
+                ? "Appointment cancelled and refund processed"
+                : "Appointment cancelled successfully",
+        });
     } catch (err) {
         console.error("cancelAppointment error:", err);
         res.status(500).json({ error: "Server error" });
@@ -519,59 +651,36 @@ exports.rescheduleAppointment = async (req, res) => {
         if (!appointmentId || !newDate || !newStartTime || !newEndTime)
             return res.status(400).json({ error: "appointmentId, newDate, newStartTime, newEndTime are required" });
 
-        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        const doctor = await prisma.doctor.findUnique({
+            where: { userId: doctorUserId },
+            include: { user: true },
+        });
         if (!doctor) return res.status(404).json({ error: "Doctor not found" });
 
         const appointment = await prisma.appointment.findUnique({
             where: { id: parseInt(appointmentId) },
+            include: { patient: { include: { user: true } } },
         });
 
-        if (!appointment) return res.status(404).json({ error: "Appointment not found" });
+        if (!appointment)
+            return res.status(404).json({ error: "Appointment not found" });
+
         if (appointment.doctorId !== doctor.id)
             return res.status(403).json({ error: "Unauthorized to reschedule this appointment" });
 
-        // Convert new start/end times to Date objects
         const newStart = new Date(`${newDate}T${newStartTime}`);
         const newEnd = new Date(`${newDate}T${newEndTime}`);
-        if (newStart >= newEnd) return res.status(400).json({ error: "Start time must be before end time" });
+        if (newStart >= newEnd)
+            return res.status(400).json({ error: "Start time must be before end time" });
 
-        // Check for overlapping RESERVED slots
-        const overlappingReserved = await prisma.doctorSlot.findFirst({
-            where: {
-                doctorId: doctor.id,
-                date: new Date(newDate),
-                status: "RESERVED",
-                AND: [
-                    { startTime: { lt: newEnd } },
-                    { endTime: { gt: newStart } }
-                ]
-            }
-        });
-
-        if (overlappingReserved)
-            return res.status(400).json({ error: "Cannot reschedule: doctor already has a reserved slot in this time" });
-
-        // Remove any AVAILABLE slot that overlaps the new time
-        await prisma.doctorSlot.deleteMany({
-            where: {
-                doctorId: doctor.id,
-                date: new Date(newDate),
-                status: "AVAILABLE",
-                AND: [
-                    { startTime: { lt: newEnd } },
-                    { endTime: { gt: newStart } }
-                ]
-            }
-        });
-
-        // Free old slot if it exists
+        // Free old slot
         await prisma.doctorSlot.updateMany({
             where: { doctorId: doctor.id, date: appointment.date },
             data: { status: "AVAILABLE" },
         });
 
-        // Update appointment with new date/time
-        const updatedAppointment = await prisma.appointment.update({
+        // Update appointment
+        await prisma.appointment.update({
             where: { id: appointment.id },
             data: {
                 date: new Date(newDate),
@@ -579,8 +688,33 @@ exports.rescheduleAppointment = async (req, res) => {
             },
         });
 
-        res.json({ message: "Appointment rescheduled successfully", appointment: updatedAppointment });
+        // ===============================
+        // 🔔 Notifications & Emails
+        // ===============================
 
+        // Notify patient
+        await pushNotification({
+            userId: appointment.patient.user.id,
+            type: 'APPOINTMENT',
+            title: 'Appointment Rescheduled',
+            message: `Your appointment with Dr. ${doctor.user.fullName} has been rescheduled to ${newDate} (${newStartTime} - ${newEndTime}).`,
+            redirectUrl: `/patient/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id, doctorId: doctor.id },
+            email: appointment.patient.user.email,
+        });
+
+        // Notify doctor
+        await pushNotification({
+            userId: doctor.user.id,
+            type: 'APPOINTMENT',
+            title: 'Appointment Rescheduled',
+            message: `You rescheduled your appointment with ${appointment.patient.user.fullName} to ${newDate} (${newStartTime} - ${newEndTime}).`,
+            redirectUrl: `/doctor/appointments/${appointment.id}`,
+            metadata: { appointmentId: appointment.id, patientId: appointment.patient.user.id },
+            email: doctor.user.email,
+        });
+
+        res.json({ message: "Appointment rescheduled successfully" });
     } catch (err) {
         console.error("rescheduleAppointment error:", err);
         res.status(500).json({ error: "Server error" });
