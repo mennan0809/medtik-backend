@@ -25,6 +25,6 @@ router.get("/records", getMedicalRecords);
 
 router.get("/profile", getPatientProfile);
 
-router.post("/rescheduleSlot", rescheduleAppointment);
+router.post("/reschedule", rescheduleAppointment);
 
 module.exports = router;

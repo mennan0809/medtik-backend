@@ -8,22 +8,18 @@ const onlineUsers = new Map();
 function initSocket(server) {
     io = new Server(server, { cors: { origin: '*' } });
     io.on('connection', (socket) => {
-        console.log('⚡ User connected:', socket.id);
         socket.activeConversation = null;
 
         socket.on('join', (userId) => {
             onlineUsers.set(Number(userId), socket.id);
             socket.join(String(userId));
-            console.log(`👤 User ${userId} joined their room`);
         });
 
         socket.on('chatFocused', ({ conversationId }) => {
             socket.activeConversation = conversationId;
-            console.log(`💬 Socket ${socket.id} focused on chat ${conversationId}`);
         });
 
         socket.on('chatBlurred', () => {
-            console.log(`👁️ Socket ${socket.id} blurred chat ${socket.activeConversation}`);
             socket.activeConversation = null;
         });
 
@@ -38,7 +34,6 @@ function initSocket(server) {
             for (let [uid, sid] of onlineUsers.entries()) {
                 if (sid === socket.id) onlineUsers.delete(uid);
             }
-            console.log('❌ User disconnected:', socket.id);
         });
     });
 

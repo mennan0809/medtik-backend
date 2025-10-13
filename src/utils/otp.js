@@ -16,7 +16,6 @@ async function sendWhatsAppOtp(phone, otp, statusCallback) {
             body: `Your Medtik OTP is: ${otp} (valid 5 minutes)`,
             statusCallback
         });
-        console.log("WhatsApp message queued:", message.sid);
         return true;
     } catch (err) {
         console.error("WhatsApp send error:", err.message);
@@ -57,7 +56,6 @@ async function sendEmailOtp(email, otp) {
             html: htmlContent
         });
 
-        console.log(`Professional OTP email sent to ${email}`);
         return true;
     } catch (err) {
         console.error("Email OTP failed:", err.message);

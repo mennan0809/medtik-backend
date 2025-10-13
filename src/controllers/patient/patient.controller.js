@@ -328,11 +328,11 @@ exports.getMyAppointments = async (req, res) => {
             where: { patientId: patient.id },
             include: {
                 doctor: {
-                                department: true, // this gives you the department object
+                    include: {
+                        department: true,
+                    }
 
-
-                    },
-
+                },
             },
             orderBy: { date: "desc" },
         });
@@ -494,22 +494,25 @@ exports.getPatientProfile = async (req, res) => {
 };
 
 // =========================
-// Cancel a reserved slot
+// Cancel a reserved slot (with debug logs)
 // =========================
 exports.cancelReservation = async (req, res) => {
     try {
-        const patientUserId = req.user.id;
+        const patientUserId = req.user?.id;
         const { appointmentId } = req.body;
 
-        if (!appointmentId)
+        if (!appointmentId) {
             return res.status(400).json({ error: 'appointmentId is required' });
+        }
 
         const user = await prisma.user.findUnique({
             where: { id: patientUserId },
             include: { patient: true },
         });
-        if (!user?.patient)
+
+        if (!user?.patient) {
             return res.status(404).json({ error: 'Patient not found' });
+        }
 
         const appointment = await prisma.appointment.findUnique({
             where: { id: appointmentId },
@@ -518,12 +521,18 @@ exports.cancelReservation = async (req, res) => {
                 Payment: true,
             },
         });
-        if (!appointment)
+
+        if (!appointment) {
             return res.status(404).json({ error: 'Appointment not found' });
-        if (appointment.patientId !== user.patient.id)
+        }
+
+        if (appointment.patientId !== user.patient.id) {
             return res.status(403).json({ error: 'This appointment does not belong to you' });
-        if (['PENDING_PAYMENT','CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(appointment.status))
+        }
+
+        if (['PENDING_PAYMENT', 'CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(appointment.status)) {
             return res.status(400).json({ error: 'This appointment cannot be cancelled' });
+        }
 
         const now = new Date();
         const appointmentTime = new Date(appointment.date);
@@ -533,9 +542,9 @@ exports.cancelReservation = async (req, res) => {
         let refundSuccess = false;
 
         await prisma.$transaction(async (tx) => {
-            // Cancel appointment
+
             await tx.appointment.update({
-                where: { id: appointment.id },
+                where: { id: appointmentId },
                 data: { status: 'CANCELLED' },
             });
 
@@ -545,13 +554,11 @@ exports.cancelReservation = async (req, res) => {
                 data: { status: 'AVAILABLE' },
             });
 
-            // Only update payment status here if you want, or do it after refund
-            // Better: leave it for after refund
         });
 
-// ------------------------
-// Refund outside transaction
-// ------------------------
+        // ------------------------
+        // Refund outside transaction
+        // ------------------------
         if (canRefund && appointment.Payment) {
             try {
                 await paymobService.refundPaymentThroughPaymob(
@@ -565,15 +572,13 @@ exports.cancelReservation = async (req, res) => {
 
                 refundSuccess = true;
             } catch (refundErr) {
-                console.error('Refund failed:', refundErr);
+                console.error('❌ Refund failed:', refundErr);
             }
         }
-
 
         // ===============================
         // 🔔 Notifications & Emails
         // ===============================
-
         // Notify doctor
         await pushNotification({
             userId: appointment.doctor.user.id,
@@ -605,19 +610,19 @@ exports.cancelReservation = async (req, res) => {
                 type: 'PAYMENT',
                 title: 'Refund Processed',
                 message: `Your payment for the cancelled appointment with Dr. ${appointment.doctor.user.fullName} has been refunded.`,
-                redirectUrl: `/patient/payments/${appointment.payment.id}`,
-                metadata: { paymentId: appointment.payment.id },
+                redirectUrl: `/patient/payments/${appointment.Payment.id}`,
+                metadata: { paymentId: appointment.Payment.id },
                 email: user.email,
             });
-
         }
+
         res.json({
             message: canRefund
                 ? 'Appointment cancelled successfully and refund processed'
                 : 'Appointment cancelled successfully (no refund due to policy)',
         });
     } catch (err) {
-        console.error('cancelReservation error:', err);
+        console.error('🔥 cancelReservation error:', err);
         res.status(500).json({ error: 'Server error' });
     }
 };
@@ -633,7 +638,6 @@ exports.rescheduleAppointment = async (req, res) => {
         const appointment = await prisma.appointment.findUnique({
             where: { id: appointmentId },
             include: {
-                slot: true,
                 doctor: { include: { user: true } },
                 patient: { include: { user: true } },
             },
@@ -656,7 +660,7 @@ exports.rescheduleAppointment = async (req, res) => {
         const policyHours = doctor.reschedulePolicy || 0;
         const now = new Date();
         const timeUntilAppointment =
-            (appointment.slot.startTime - now) / (1000 * 60 * 60);
+            (appointment.date - now) / (1000 * 60 * 60);
 
         if (timeUntilAppointment < policyHours) {
             return res.status(400).json({
@@ -680,23 +684,23 @@ exports.rescheduleAppointment = async (req, res) => {
         if (newSlot.startTime < new Date())
             return res.status(400).json({ error: 'Cannot reschedule to a past slot' });
 
+        await prisma.doctorSlot.updateMany({
+            where: { startTime: appointment.date },
+            data: { status: "AVAILABLE" },
+        });
+
         await prisma.$transaction([
             prisma.appointment.update({
                 where: { id: appointmentId },
                 data: {
-                    slotId: newSlotId,
-                    date: newSlot.date,
+                    date: newSlot.startTime,
                     status: 'CONFIRMED',
                 },
             }),
             prisma.doctorSlot.update({
-                where: { id: appointment.slotId },
-                data: { isBooked: false },
-            }),
-            prisma.doctorSlot.update({
-                where: { id: newSlotId },
-                data: { isBooked: true },
-            }),
+                where: { id: newSlot.id },
+                data: { status: "RESERVED" },
+            })
         ]);
 
         res.json({ message: 'Appointment rescheduled successfully' });
@@ -707,7 +711,7 @@ exports.rescheduleAppointment = async (req, res) => {
             type: 'APPOINTMENT',
             title: 'Appointment Rescheduled',
             message: `${appointment.patient.user.fullName} rescheduled their appointment to ${new Date(
-                newSlot.date
+                newSlot.startTime
             ).toLocaleString()}.`,
             redirectUrl: `/doctor/appointments/${appointmentId}`,
             metadata: { appointmentId, newSlotId },
@@ -720,7 +724,7 @@ exports.rescheduleAppointment = async (req, res) => {
             type: 'APPOINTMENT',
             title: 'Appointment Rescheduled',
             message: `Your appointment with Dr. ${doctor.user.fullName} was rescheduled to ${new Date(
-                newSlot.date
+                newSlot.startTime
             ).toLocaleString()}.`,
             redirectUrl: `/patient/appointments/${appointmentId}`,
             metadata: { appointmentId, newSlotId },

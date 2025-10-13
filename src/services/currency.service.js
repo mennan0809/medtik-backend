@@ -14,8 +14,6 @@ async function convertToEGP(amount, from) {
 
         // Refresh cache if empty or expired
         if (!cachedRates || now - lastFetched > CACHE_TTL) {
-            console.log("Fetching fresh currency rates...");
-
             // Fetch all relative to EGP
             const response = await axios.get(`${baseUrl}/${apiKey}/latest/EGP`);
 

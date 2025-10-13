@@ -114,8 +114,6 @@ model User {
   doctorUpdateRequests DoctorUpdateRequest[]
 
   conversations Conversation[] @relation("ConversationParticipants")
-
-  conversationId Int?
 }
 
 // =========================

@@ -19,7 +19,6 @@ async function sendEmail(to, subject, htmlContent) {
             subject,
             html: htmlContent
         });
-        console.log(`✅ Email sent to ${to} | Subject: ${subject}`);
         return true;
     } catch (err) {
         console.error("❌ Email sending failed:", err.message);

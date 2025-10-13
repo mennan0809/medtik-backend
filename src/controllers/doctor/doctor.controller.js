@@ -401,7 +401,6 @@ exports.markAppointmentNoShow = async (req, res) => {
         if (doctor.noShowPolicy && appointment.payment) {
             try {
                 const refundResponse = await refundPaymentThroughPaymob(appointment.payment.transactionId);
-                console.log("Refund success:", refundResponse);
                 refundSuccess = true;
             } catch (refundErr) {
                 console.error("Refund failed:", refundErr);
@@ -717,6 +716,60 @@ exports.rescheduleAppointment = async (req, res) => {
         res.json({ message: "Appointment rescheduled successfully" });
     } catch (err) {
         console.error("rescheduleAppointment error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// Get Doctor Appointments
+// =========================
+exports.getMyAppointments = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+
+        // Find the doctor linked to this user
+        const doctor = await prisma.doctor.findUnique({
+            where: { userId: doctorUserId },
+        });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        // Get all appointments for this doctor
+        const appointments = await prisma.appointment.findMany({
+            where: { doctorId: doctor.id },
+            include: {
+                patient: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                fullName: true,
+                                email: true,
+                            },
+                        },
+                    },
+                },
+                payment: true,
+                DoctorSlot: true,
+            },
+            orderBy: { date: "desc" }, // latest first
+        });
+
+        // Optional: categorize appointments
+        const now = new Date();
+        const categorized = {
+            upcoming: appointments.filter(a => new Date(a.date) > now && a.status === "CONFIRMED"),
+            completed: appointments.filter(a => a.status === "COMPLETED"),
+            cancelled: appointments.filter(a => a.status === "CANCELLED"),
+            noShow: appointments.filter(a => a.status === "NO_SHOW"),
+        };
+
+        res.json({
+            message: "Appointments fetched successfully",
+            total: appointments.length,
+            categorized,
+        });
+    } catch (err) {
+        console.error("getMyAppointments error:", err);
         res.status(500).json({ error: "Server error" });
     }
 };

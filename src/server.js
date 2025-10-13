@@ -10,7 +10,6 @@ console.log(`🚀 Server starting at ${new Date().toLocaleString()} on port ${PO
 
 // ===== Cron: delete old doctor slots =====
 cron.schedule("0 0 * * *", async () => {
-    console.log(`🕒 Doctor slots cleanup started at ${new Date().toLocaleString()}`);
     try {
         const now = new Date();
         const result = await prisma.doctorSlot.deleteMany({
@@ -18,7 +17,6 @@ cron.schedule("0 0 * * *", async () => {
                 endTime: { lt: now },
             },
         });
-        console.log(`🧹 Cleaned up ${result.count} old doctor slots at ${new Date().toLocaleString()}`);
     } catch (err) {
         console.error("❌ Error cleaning up slots:", err);
     }
@@ -62,19 +60,14 @@ cron.schedule("*/16 * * * *", async () => { // every minute for testing
                         where: { id: slot.id },
                         data: { status: "AVAILABLE" },
                     });
-                } else {
-                    console.log(`⚠️ No matching doctor slot found for payment ${payment.id}`);
                 }
 
                 await tx.payment.delete({
                     where: { id: payment.id },
                 });
             });
-
-            console.log(`🧹 Cleaned up unpaid payment ${payment.id} and its appointment at ${new Date().toLocaleString()}`);
         }
 
-        console.log("✅ Unpaid payments cleanup finished");
     } catch (err) {
         console.error("❌ Error cleaning up unpaid payments:", err);
     }

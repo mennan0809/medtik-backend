@@ -10,7 +10,7 @@ const {
     markAppointmentNoShow,
     markAppointmentCompleted,
     rescheduleAppointment,
-    cancelAppointment
+    cancelAppointment, getMyAppointments
 } = require("../controllers/doctor/doctor.controller");
 
 const { verifyToken, requireRole } = require("../middleware/auth");
@@ -28,6 +28,7 @@ router.delete("/slots/:id", deleteSlot);
 
 // Appointments
 router.get("/getMyPatients", getMyPatients);
+router.get("/getMyAppointments", getMyAppointments);
 router.put("/appointments/:appointmentId/no-show", markAppointmentNoShow);
 router.put("/appointments/:appointmentId/completed", markAppointmentCompleted);
 router.put("/appointments/:appointmentId/reschedule", rescheduleAppointment); // expects { newSlotId }

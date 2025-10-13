@@ -34,8 +34,6 @@ function verifyHmac(obj, hmac) {
         .update(hmacString)
         .digest("hex");
 
-    console.log(generatedHmac + "COMPARED TO" + hmac);
-
     return generatedHmac === hmac;
 }
 
@@ -90,7 +88,6 @@ exports.paymobCallback = async (req, res) => {
 
         // 3️⃣ Handle failed payments
         if (!success && payment.appointmentId) {
-            console.log("❌ Payment failed → Cleaning up appointment and slot");
             await prisma.$transaction(async (tx) => {
                 await tx.appointment.delete({ where: { id: payment.appointmentId } });
 
@@ -152,12 +149,6 @@ exports.paymobCallback = async (req, res) => {
                 email: patient.user.email,
             });
         }
-
-        console.log(
-            success
-                ? `✅ Payment successful [paymentId=${paymentId}, transactionId=${paymobTransactionId}]`
-                : `❌ Payment failed [paymentId=${paymentId}, appointmentId=${payment.appointmentId}]`
-        );
 
         res.status(200).send("OK");
     } catch (err) {
