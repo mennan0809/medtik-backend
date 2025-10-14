@@ -181,7 +181,10 @@ exports.login = async (req, res) => {
 
         const user = await prisma.user.findUnique({
             where: { email },
-            include: { patient: true }
+            include: {
+                patient: true,
+                doctor: true // ✅ include doctor info
+            }
         });
 
         if (!user) return res.status(404).json({ error: "User not found" });
@@ -189,12 +192,12 @@ exports.login = async (req, res) => {
         const validPass = await bcrypt.compare(password, user.password);
         if (!validPass) return res.status(400).json({ error: "Invalid credentials" });
 
-        // Prevent banned accounts from logging in
+        // ✅ check banned users globally
         if (user.status === "BANNED") {
             return res.status(403).json({ error: "Your account has been banned. Contact support." });
         }
 
-        // If role is PATIENT → require verified
+        // ✅ block unverified patients
         if (user.role === "PATIENT" && !user.patient?.verified) {
             return res.status(403).json({ error: "Please verify your account with OTP first." });
         }
@@ -205,7 +208,19 @@ exports.login = async (req, res) => {
             { expiresIn: "1h" }
         );
 
-        res.json({ message: "Login successful", token });
+        // ✅ custom response depending on role
+        let responseData = {
+            message: "Login successful",
+            token,
+            role: user.role
+        };
+
+        if (user.role === "DOCTOR") {
+            responseData.doctorStatus = user.doctor?.status || "UNKNOWN";
+        }
+
+        res.json(responseData);
+
     } catch (err) {
         console.error("Login error:", err);
         res.status(500).json({ error: "Login failed" });
