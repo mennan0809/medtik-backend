@@ -2,11 +2,35 @@
 const prisma = require("../config/db");
 const {Role} = require("@prisma/client");
 
-// Get all departments
 exports.getDepartments = async (req, res) => {
     try {
-        const departments = await prisma.department.findMany();
-        res.json(departments);
+        const departments = await prisma.department.findMany({
+            include: {
+                doctors: {
+                    include: {
+                        user: true,
+                        Appointment: true, // 👈 include appointments to count them
+                    },
+                },
+            },
+        });
+
+        const formatted = departments.map((dep) => ({
+            id: dep.id,
+            name: dep.name,
+            description: dep.description,
+            doctors: dep.doctors.map((doc) => ({
+                id: doc.user.id,
+                doctorId: doc.id,
+                name: doc.user?.fullName || "Unknown Doctor",
+                email: doc.user?.email || "N/A",
+                status: doc.user?.status?.toLowerCase() || "inactive",
+                sessions: doc.Appointment?.length || 0, // 👈 session count
+                rating: null, // placeholder if you’ll add ratings later
+            })),
+        }));
+
+        res.json(formatted);
     } catch (error) {
         console.error("Error fetching departments:", error);
         res.status(500).json({ error: "Failed to fetch departments" });
