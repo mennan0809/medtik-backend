@@ -166,7 +166,7 @@ exports.acceptRequest = async (req, res) => {
                 phone: payload.service.phone,
                 videoProvider: payload.service.videoProvider,
                 cancellationPolicy: payload.service.cancellationPolicy,
-                refundPolicy: payload.service.refundPolicy,
+                noShowPolicy: payload.service.noShowPolicy,
                 reschedulePolicy: payload.service.reschedulePolicy,
             });
         }
@@ -266,7 +266,7 @@ exports.rejectRequest = async (req, res) => {
                 where: { id: updatedRequest.doctorId },
                 data: {
                     status: "REJECTED",
-                    rejectionReason: notes,
+                    rejectionReason: note,
                 },
             });
         }

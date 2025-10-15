@@ -60,9 +60,9 @@ exports.requestDoctorUpdate = async (req, res) => {
             };
         }
 
-        if (body.departmentId) {
+        if (body.department) {
             types.push("DEPARTMENT");
-            payload.department = { departmentId: body.departmentId };
+            payload.department = body.department; // just store name directly
         }
 
         if (body.avatarUrl) {
@@ -101,7 +101,7 @@ exports.requestDoctorUpdate = async (req, res) => {
                 ...(payload.service || {}),
                 videoProvider: body.videoProvider,
                 cancellationPolicy: body.cancellationPolicy,
-                refundPolicy: body.refundPolicy,
+                noShowPolicy: body.noShowPolicy,
                 reschedulePolicy: body.reschedulePolicy,
             };
         }
@@ -169,6 +169,11 @@ exports.getDoctorProfile = async (req, res) => {
             include: {
                 doctor: {
                     include: {
+                        user: {
+                            select: {
+                                fullName: true,
+                            },
+                        },
                         department: true,
                         availability: true,
                         pricing: true,
@@ -176,14 +181,21 @@ exports.getDoctorProfile = async (req, res) => {
                         Payment: true,
                         Consultation: true,
                         DoctorSlot: true,
-                    }
-                }
-            }
+                    },
+                },
+            },
         });
 
         if (!user || !user.doctor) return res.status(404).json({ error: "Doctor not found" });
 
-        res.json({ doctor: user.doctor });
+        const doctor = {
+            ...user.doctor,
+            fullName: user.doctor.user?.fullName || null,
+        };
+        delete doctor.user; // remove nested user object
+
+        res.json({ doctor: doctor });
+
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Server error" });
