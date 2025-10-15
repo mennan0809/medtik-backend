@@ -9,6 +9,8 @@ router.use(verifyToken, requireRole("ADMIN"));
 
 // Department routes
 router.post('/departments', adminController.addDepartment);
+router.put('/departments/:id', adminController.updateDepartment);
+router.delete('/departments/:id', adminController.deleteDepartment);
 
 // User routes
 router.get('/users', adminController.getUsers);

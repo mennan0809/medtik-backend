@@ -320,6 +320,16 @@ model Notification {
   updatedAt DateTime @updatedAt
 }
 
+model AdminNotification {
+  id          Int      @id @default(autoincrement())
+  title       String
+  message     String
+  redirectUrl String?
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // =========================
 // Conversation
 // =========================

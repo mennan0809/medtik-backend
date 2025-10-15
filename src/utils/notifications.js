@@ -55,4 +55,33 @@ async function pushNotification({ userId, type, title, message, redirectUrl = nu
     return notification;
 }
 
-module.exports = { pushNotification };
+async function pushAdminNotification({ title, message, redirectUrl = null }) {
+    let notification = null;
+
+    try {
+        // 1️⃣ Save admin notification in DB
+        notification = await prisma.adminNotification.create({
+            data: {
+                title,
+                message,
+                redirectUrl,
+            },
+        });
+    } catch (err) {
+        console.error("❌ Failed to save admin notification in DB:", err.message);
+        return null;
+    }
+
+    try {
+        // 2️⃣ Emit to all connected admins
+        const io = getIO();
+        if (io) {
+            io.to("admins").emit("admin:notification:new", notification);
+        }
+    } catch (err) {
+        console.error("❌ Failed to emit admin socket notification:", err.message);
+    }
+
+    return notification;
+}
+module.exports = { pushNotification, pushAdminNotification };

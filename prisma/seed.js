@@ -30,18 +30,18 @@ async function main() {
 
     // ===== DEPARTMENTS =====
     const cardiology = await prisma.department.upsert({
-        where: { name: 'Cardiology' },
+        where: { name: 'cardiology' },
         update: {},
         create: {
-            name: 'Cardiology',
+            name: 'cardiology',
             description: 'Heart and vascular system specialists.',
         },
     });
     const pediatrics = await prisma.department.upsert({
-        where: { name: 'Pediatrics' },
+        where: { name: 'pediatrics' },
         update: {},
         create: {
-            name: 'Pediatrics',
+            name: 'pediatrics',
             description: 'Child healthcare specialists.',
         },
     });

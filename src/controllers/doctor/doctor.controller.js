@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const prisma = require("../../config/db");
 const {refundPaymentThroughPaymob} = require("../../services/paymob.service");
-const {pushNotification} = require("../../utils/notifications");
+const {pushNotification, pushAdminNotification} = require("../../utils/notifications");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -143,6 +143,12 @@ exports.requestDoctorUpdate = async (req, res) => {
                 payload,
                 status: "PENDING",
             }
+        });
+
+        await pushAdminNotification({
+            title: "Doctor Update Request",
+            message: `Dr. ${user.fullName || "Unknown"} has submitted a profile update request.`,
+            redirectUrl: `/admin/doctors/requests/${request.id}`,
         });
 
         res.json({ message: "Update request submitted", request });

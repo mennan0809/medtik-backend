@@ -32,6 +32,87 @@ exports.addDepartment = async (req, res) => {
 };
 
 // ===========================
+// Update Department
+// ===========================
+exports.updateDepartment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description } = req.body;
+
+        if (!id) {
+            return res.status(400).json({ error: "Department ID is required" });
+        }
+
+        const department = await prisma.department.findUnique({
+            where: { id: parseInt(id) },
+        });
+
+        if (!department) {
+            return res.status(404).json({ error: "Department not found" });
+        }
+
+        // 🔒 Check if the new name already exists (and belongs to a different department)
+        if (name) {
+            const existing = await prisma.department.findUnique({
+                where: { name: name.toLowerCase() },
+            });
+
+            if (existing && existing.id !== department.id) {
+                return res
+                    .status(400)
+                    .json({ error: "A department with this name already exists" });
+            }
+        }
+
+        const updatedDepartment = await prisma.department.update({
+            where: { id: parseInt(id) },
+            data: {
+                ...(name && { name: name.toLowerCase() }),
+                ...(description && { description }),
+            },
+        });
+
+        res.status(200).json({
+            message: "Department updated successfully",
+            department: updatedDepartment,
+        });
+    } catch (err) {
+        console.error("Update department error:", err);
+        res.status(500).json({ error: "Failed to update department" });
+    }
+};
+
+
+// ===========================
+// Delete Department
+// ===========================
+exports.deleteDepartment = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({ error: "Department ID is required" });
+        }
+
+        const department = await prisma.department.findUnique({
+            where: { id: parseInt(id) },
+        });
+
+        if (!department) {
+            return res.status(404).json({ error: "Department not found" });
+        }
+
+        await prisma.department.delete({
+            where: { id: parseInt(id) },
+        });
+
+        res.status(200).json({ message: "Department deleted successfully" });
+    } catch (err) {
+        console.error("Delete department error:", err);
+        res.status(500).json({ error: "Failed to delete department" });
+    }
+};
+// ===========================
 // Get All Users
 // ===========================
 exports.getUsers = async (req, res) => {
