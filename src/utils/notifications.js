@@ -84,4 +84,5 @@ async function pushAdminNotification({ title, message, redirectUrl = null }) {
 
     return notification;
 }
+
 module.exports = { pushNotification, pushAdminNotification };

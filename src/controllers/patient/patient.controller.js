@@ -120,6 +120,10 @@ exports.getAllDoctors = async (req, res) => {
                         },
                     },
                 },
+                // Aggregate reviews for this doctor
+                reviewsReceived: {
+                    select: { rating: true },
+                },
             },
         });
 
@@ -146,6 +150,13 @@ exports.getAllDoctors = async (req, res) => {
                     }
                     : null;
 
+                // Compute average rating & total reviews
+                const totalReviews = u.reviewsReceived.length;
+                const avgRating =
+                    totalReviews > 0
+                        ? u.reviewsReceived.reduce((sum, r) => sum + r.rating, 0) / totalReviews
+                        : null;
+
                 return {
                     id: u.id,
                     fullName: u.fullName,
@@ -158,12 +169,14 @@ exports.getAllDoctors = async (req, res) => {
                     department: u.doctor.department?.name,
                     policies: {
                         cancellation: u.doctor.cancellationPolicy,
-                        refund: u.doctor.refundPolicy,
+                        noShow: u.doctor.noShowPolicy,
                         reschedule: u.doctor.reschedulePolicy,
                     },
                     pricing: u.doctor.pricing,
                     availability: adjustedAvailability,
                     availableSlots: filteredSlots,
+                    totalReviews,
+                    avgRating,
                 };
             });
 
@@ -173,6 +186,7 @@ exports.getAllDoctors = async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 };
+
 // =========================
 // Reserve a doctor slot + Payment (PayMob)
 // =========================
@@ -735,3 +749,97 @@ exports.rescheduleAppointment = async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 };
+
+
+exports.reviewDoctor = async (req, res) => {
+    try {
+        const patientUserId = req.user.id; // from auth middleware
+        const { doctorId, rating, comment } = req.body;
+
+        if (!doctorId || !rating)
+            return res.status(400).json({ error: "doctorId and rating are required" });
+
+        if (rating < 1 || rating > 5)
+            return res.status(400).json({ error: "Rating must be between 1 and 5" });
+
+        // Get patient
+        const patient = await prisma.patient.findUnique({
+            where: { userId: patientUserId },
+        });
+
+        if (!patient) return res.status(404).json({ error: "Patient not found" });
+
+        // Check if doctor exists
+        const doctor = await prisma.doctor.findUnique({ where: { id: doctorId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        // Optional: prevent multiple reviews from same patient
+        const existingReview = await prisma.review.findFirst({
+            where: { reviewerId: patientUserId, revieweeId: doctor.userId },
+        });
+        if (existingReview)
+            return res.status(400).json({ error: "You have already reviewed this doctor" });
+
+        // Create review
+        const review = await prisma.review.create({
+            data: {
+                reviewerId: patientUserId,
+                revieweeId: doctor.userId,
+                rating,
+                comment,
+            },
+            select: {
+                id: true,
+                rating: true,
+                comment: true,
+                createdAt: true,
+                reviewer: { select: { fullName: true } },
+            },
+        });
+
+        res.json({ message: "Review submitted successfully", review });
+    } catch (err) {
+        console.error("reviewDoctor error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+exports.updateDoctorReview = async (req, res) => {
+    try {
+        const { reviewId, rating, comment } = req.body;
+        const userId = req.user.id; // from auth middleware
+
+        if (!reviewId) {
+            return res.status(400).json({ error: "reviewId is required" });
+        }
+
+        // Find the review
+        const review = await prisma.review.findUnique({
+            where: { id: reviewId },
+        });
+
+        if (!review) {
+            return res.status(404).json({ error: "Review not found" });
+        }
+
+        // Ensure the current user is the reviewer
+        if (review.reviewerId !== userId) {
+            return res.status(403).json({ error: "You can only update your own review" });
+        }
+
+        // Update the review
+        const updatedReview = await prisma.review.update({
+            where: { id: reviewId },
+            data: {
+                rating: rating ?? review.rating,
+                comment: comment ?? review.comment,
+            },
+        });
+
+        res.json({ message: "Review updated successfully", review: updatedReview });
+    } catch (err) {
+        console.error("updateDoctorReview error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+

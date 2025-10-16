@@ -1,6 +1,8 @@
 // controllers/department.controller.js
 const prisma = require("../config/db");
 const {Role} = require("@prisma/client");
+const jwt = require("jsonwebtoken");
+const JWT_SECRET = process.env.JWT_SECRET;
 
 exports.getDepartments = async (req, res) => {
     try {
@@ -119,6 +121,7 @@ exports.getAppointments = async (req, res) => {
         res.status(500).json({ error: "Failed to fetch appointments" });
     }
 };
+
 exports.getPayments = async (req, res) => {
     try {
         const user = req.user;
@@ -180,5 +183,121 @@ exports.getPayments = async (req, res) => {
     } catch (error) {
         console.error("Error fetching payments:", error);
         res.status(500).json({ error: "Failed to fetch payments" });
+    }
+};
+
+exports.getMyReviews = async (req, res) => {
+    try {
+        // Get user from token
+        const authHeader = req.headers.authorization;
+        if (!authHeader?.startsWith("Bearer "))
+            return res.status(401).json({ error: "No token" });
+
+        const token = authHeader.split(" ")[1];
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        // Fetch reviews for this user
+        const reviews = await prisma.review.findMany({
+            where: { revieweeId: userId },
+            select: {
+                rating: true,
+                comment: true,
+                createdAt: true,
+                reviewer: {
+                    select: { fullName: true },
+                },
+            },
+            orderBy: { createdAt: "desc" },
+        });
+
+        // Calculate rating stats
+        const totalReviews = reviews.length;
+        const ratingCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+        let ratingSum = 0;
+
+        reviews.forEach(r => {
+            ratingSum += r.rating;
+            ratingCounts[r.rating] = (ratingCounts[r.rating] || 0) + 1;
+        });
+
+        const avgRating = totalReviews ? (ratingSum / totalReviews).toFixed(1) : 0;
+
+        res.json({
+            totalReviews,
+            avgRating: Number(avgRating),
+            ratingCounts,
+            reviews: reviews.map(r => ({
+                comment: r.comment,
+                rating: r.rating,
+                reviewerName: r.reviewer.fullName,
+                createdAt: r.createdAt,
+            })),
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+exports.getMyWrittenReviews = async (req, res) => {
+    try {
+        // Get user from token
+        const authHeader = req.headers.authorization;
+        if (!authHeader?.startsWith("Bearer "))
+            return res.status(401).json({ error: "No token" });
+
+        const token = authHeader.split(" ")[1];
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        // Fetch reviews written by this user
+        const reviews = await prisma.review.findMany({
+            where: { reviewerId: userId },
+            select: {
+                rating: true,
+                comment: true,
+                createdAt: true,
+                reviewee: {
+                    select: {
+                        fullName: true,
+                        role: true,
+                        doctor: { select: { avatarUrl:true, title: true, departmentId: true } },
+                        patient: { select: { gender: true, country: true } },
+                    },
+                },
+            },
+            orderBy: { createdAt: "desc" },
+        });
+
+        // Calculate rating stats for your own reviews
+        const totalReviews = reviews.length;
+        const ratingCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+        let ratingSum = 0;
+
+        reviews.forEach(r => {
+            ratingSum += r.rating;
+            ratingCounts[r.rating] = (ratingCounts[r.rating] || 0) + 1;
+        });
+
+        const avgRating = totalReviews ? (ratingSum / totalReviews).toFixed(1) : 0;
+
+        res.json({
+            totalReviews,
+            avgRating: Number(avgRating),
+            ratingCounts,
+            reviews: reviews.map(r => ({
+                avatarUrl: r.reviewee?.doctor?.avatarUrl || '', // fixed
+                title: r.reviewee?.doctor?.title || '',
+                comment: r.comment,
+                rating: r.rating,
+                revieweeName: r.reviewee.fullName,
+                createdAt: r.createdAt,
+            })),
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
     }
 };

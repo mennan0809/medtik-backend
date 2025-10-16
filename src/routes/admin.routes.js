@@ -14,6 +14,7 @@ router.delete('/departments/:id', adminController.deleteDepartment);
 
 // User routes
 router.get('/users', adminController.getUsers);
+router.get('/doctor/:doctorId', adminController.getDoctorProfileById);
 
 router.post("/toggle-ban", adminController.toggleBanUser);
 

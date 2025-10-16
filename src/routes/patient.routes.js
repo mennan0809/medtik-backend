@@ -3,7 +3,10 @@ const router = express.Router();
 const {verifyToken, requireRole} = require("../middleware/auth");
 const upload = require("../middleware/upload");
 
-const {getAllDoctors, updatePatient, reserveSlot, cancelReservation, getMyAppointments, getMyDoctors, uploadMedicalRecord, getMedicalRecords, getPatientProfile, rescheduleAppointment} = require("../controllers/patient/patient.controller");
+const {getAllDoctors, updatePatient, reserveSlot, cancelReservation, getMyAppointments, getMyDoctors, uploadMedicalRecord, getMedicalRecords, getPatientProfile, rescheduleAppointment,
+    reviewDoctor,
+    updateDoctorReview
+} = require("../controllers/patient/patient.controller");
 
 router.use(verifyToken, requireRole("PATIENT"));
 
@@ -27,4 +30,7 @@ router.get("/profile", getPatientProfile);
 
 router.post("/reschedule", rescheduleAppointment);
 
+router.post("/review", reviewDoctor);
+
+router.put("/review", updateDoctorReview);
 module.exports = router;

@@ -14,7 +14,7 @@ CREATE TYPE "Currency" AS ENUM ('EGP', 'SAR', 'AED', 'USD');
 CREATE TYPE "AppointmentStatus" AS ENUM ('PENDING_PAYMENT', 'CONFIRMED', 'CANCELLED', 'COMPLETED', 'NO_SHOW');
 
 -- CreateEnum
-CREATE TYPE "RecordType" AS ENUM ('REPORTS', 'PRESCRIPTION', 'LABS', 'IMAGING', 'OTHER');
+CREATE TYPE "RecordType" AS ENUM ('REPORT', 'PRESCRIPTION', 'LAB', 'IMAGING', 'OTHER');
 
 -- CreateEnum
 CREATE TYPE "NotificationType" AS ENUM ('APPOINTMENT', 'CHAT', 'PAYMENT', 'RECORD', 'SYSTEM');
@@ -46,7 +46,6 @@ CREATE TABLE "User" (
     "role" "Role" NOT NULL DEFAULT 'PATIENT',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
-    "conversationId" INTEGER,
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
@@ -145,6 +144,8 @@ CREATE TABLE "MedicalRecord" (
     "id" SERIAL NOT NULL,
     "patientId" INTEGER NOT NULL,
     "fileUrl" TEXT NOT NULL,
+    "notes" TEXT,
+    "type" "RecordType" NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "MedicalRecord_pkey" PRIMARY KEY ("id")
@@ -168,8 +169,8 @@ CREATE TABLE "Appointment" (
 -- CreateTable
 CREATE TABLE "Review" (
     "id" SERIAL NOT NULL,
-    "doctorId" INTEGER NOT NULL,
-    "patientId" INTEGER NOT NULL,
+    "reviewerId" INTEGER NOT NULL,
+    "revieweeId" INTEGER NOT NULL,
     "rating" INTEGER NOT NULL,
     "comment" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -191,6 +192,19 @@ CREATE TABLE "Notification" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Notification_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AdminNotification" (
+    "id" SERIAL NOT NULL,
+    "title" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "redirectUrl" TEXT,
+    "read" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AdminNotification_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -287,6 +301,9 @@ CREATE UNIQUE INDEX "Department_name_key" ON "Department"("name");
 CREATE UNIQUE INDEX "Patient_userId_key" ON "Patient"("userId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Payment_appointmentId_key" ON "Payment"("appointmentId");
+
+-- CreateIndex
 CREATE INDEX "_ConversationParticipants_B_index" ON "_ConversationParticipants"("B");
 
 -- AddForeignKey
@@ -317,10 +334,10 @@ ALTER TABLE "Appointment" ADD CONSTRAINT "Appointment_doctorId_fkey" FOREIGN KEY
 ALTER TABLE "Appointment" ADD CONSTRAINT "Appointment_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Review" ADD CONSTRAINT "Review_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "Doctor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Review" ADD CONSTRAINT "Review_reviewerId_fkey" FOREIGN KEY ("reviewerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Review" ADD CONSTRAINT "Review_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Review" ADD CONSTRAINT "Review_revieweeId_fkey" FOREIGN KEY ("revieweeId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

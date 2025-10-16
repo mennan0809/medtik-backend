@@ -1,4 +1,3 @@
-// socket.js
 const { Server } = require('socket.io');
 const prisma = require("../config/db");
 
@@ -7,36 +6,58 @@ const onlineUsers = new Map();
 
 function initSocket(server) {
     io = new Server(server, { cors: { origin: '*' } });
+
     io.on('connection', (socket) => {
+        console.log(`🔌 New socket connected: ${socket.id}`);
         socket.activeConversation = null;
+        const role = socket.handshake.auth.role;
+
+        if (role === "ADMIN") {
+            socket.join("admins");
+        }
 
         socket.on('join', (userId) => {
             onlineUsers.set(Number(userId), socket.id);
             socket.join(String(userId));
+            console.log(`👤 User ${userId} joined socket room. Online users: ${onlineUsers.size}`);
         });
 
         socket.on('chatFocused', ({ conversationId }) => {
             socket.activeConversation = conversationId;
+            console.log(`💬 Socket ${socket.id} focused on conversation ${conversationId}`);
         });
 
         socket.on('chatBlurred', () => {
+            console.log(`💤 Socket ${socket.id} blurred conversation ${socket.activeConversation}`);
             socket.activeConversation = null;
         });
 
         socket.on('markSeen', async ({ conversationId, userId }) => {
-            await prisma.message.updateMany({
-                where: { conversationId, receiverId: userId, seen: false },
-                data: { seen: true },
-            });
+            try {
+                const result = await prisma.message.updateMany({
+                    where: { conversationId, receiverId: userId, seen: false },
+                    data: { seen: true },
+                });
+                console.log(`✅ Messages marked seen for user ${userId} in conversation ${conversationId}: ${result.count}`);
+            } catch (err) {
+                console.error(`❌ Error marking messages as seen for user ${userId}:`, err.message);
+            }
         });
 
-        socket.on('disconnect', () => {
+        socket.on('disconnect', (reason) => {
+            console.log(`❌ Socket disconnected: ${socket.id}`);
+            console.log(`ℹ️ Disconnect reason: ${reason}`); // <-- log reason
+
             for (let [uid, sid] of onlineUsers.entries()) {
-                if (sid === socket.id) onlineUsers.delete(uid);
+                if (sid === socket.id) {
+                    onlineUsers.delete(uid);
+                    console.log(`🧹 Removed user ${uid} from online users. Remaining: ${onlineUsers.size}`);
+                }
             }
         });
     });
 
+    console.log('⚡ Socket.IO server initialized');
     return io;
 }
 

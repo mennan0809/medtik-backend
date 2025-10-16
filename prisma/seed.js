@@ -64,8 +64,11 @@ async function main() {
         return pricing;
     };
 
-    const doc1User = await prisma.user.create({
-        data: {
+// ===== DOCTORS =====
+    const doc1User = await prisma.user.upsert({
+        where: { email: 'mennan0809@gmail.com' },
+        update: {}, // do nothing if exists
+        create: {
             fullName: 'Dr. Sarah Hamed',
             email: 'mennan0809@gmail.com',
             password: doctorPassword,
@@ -73,6 +76,7 @@ async function main() {
             doctor: {
                 create: {
                     title: 'Cardiologist',
+                    avatarUrl:"https://avatar.iran.liara.run/public/35",
                     departmentId: cardiology.id,
                     yearsOfExperience: 12,
                     licenseNumber: 'DOC-CARD-001',
@@ -82,9 +86,7 @@ async function main() {
                     hospitals: ['GUC Medical Center'],
                     education: ['Cairo University'],
                     certificates: ['Board Certified Cardiologist'],
-                    pricing: {
-                        create: generatePricing(),
-                    },
+                    pricing: { create: generatePricing() },
                     availability: { create: { chat: true, voice: true, video: true } },
                 },
             },
@@ -92,8 +94,10 @@ async function main() {
         include: { doctor: true },
     });
 
-    const doc2User = await prisma.user.create({
-        data: {
+    const doc2User = await prisma.user.upsert({
+        where: { email: 'mnaem@panarab-media.com' },
+        update: {},
+        create: {
             fullName: 'Dr. Karim Youssef',
             email: 'mnaem@panarab-media.com',
             password: doctorPassword,
@@ -103,6 +107,7 @@ async function main() {
                     title: 'Pediatrician',
                     departmentId: pediatrics.id,
                     yearsOfExperience: 8,
+                    avatarUrl: 'https://www.w3schools.com/w3images/avatar6.png',
                     licenseNumber: 'DOC-PED-002',
                     bio: 'Pediatrician with focus on child nutrition and development.',
                     phone: '+201228136363',
@@ -110,9 +115,7 @@ async function main() {
                     hospitals: ['Children’s Hospital Egypt'],
                     education: ['Ain Shams University'],
                     certificates: ['Certified Pediatric Specialist'],
-                    pricing: {
-                        create: generatePricing(),
-                    },
+                    pricing: { create: generatePricing() },
                     availability: { create: { chat: true, voice: true, video: true } },
                 },
             },
@@ -120,13 +123,13 @@ async function main() {
         include: { doctor: true },
     });
 
-    console.log('👨‍⚕️ Doctors seeded.');
-
-    // ===== PATIENTS =====
+// ===== PATIENTS =====
     const patientPassword = await bcrypt.hash('patient123', 12);
 
-    const pat1User = await prisma.user.create({
-        data: {
+    const pat1User = await prisma.user.upsert({
+        where: { email: 'menna.naem08@gmail.com' },
+        update: {},
+        create: {
             fullName: 'Mona El Said',
             email: 'menna.naem08@gmail.com',
             password: patientPassword,
@@ -138,20 +141,16 @@ async function main() {
                     phone: '+201228136363',
                     birthdate: new Date('1995-06-15'),
                     verified: true,
-                    records: {
-                        create: [
-                            { fileUrl: 'https://fakecdn.com/records/mona-labs.pdf' },
-                            { fileUrl: 'https://fakecdn.com/records/mona-report.pdf' },
-                        ],
-                    },
                 },
             },
         },
         include: { patient: true },
     });
 
-    const pat2User = await prisma.user.create({
-        data: {
+    const pat2User = await prisma.user.upsert({
+        where: { email: 'aa.mennaa@outlook.com' },
+        update: {},
+        create: {
             fullName: 'Ahmed Khaled',
             email: 'aa.mennaa@outlook.com',
             password: patientPassword,
@@ -196,20 +195,36 @@ async function main() {
     // ===== REVIEWS =====
     await prisma.review.createMany({
         data: [
+            // Patients reviewing doctors
             {
-                doctorId: doc1User.doctor.id,
-                patientId: pat1User.patient.id,
+                reviewerId: pat1User.id,   // patient reviewing doctor
+                revieweeId: doc1User.id,   // doctor being reviewed
                 rating: 5,
                 comment: 'Dr. Sarah was amazing and helpful!',
             },
             {
-                doctorId: doc2User.doctor.id,
-                patientId: pat2User.patient.id,
+                reviewerId: pat2User.id,
+                revieweeId: doc2User.id,
                 rating: 4,
                 comment: 'Good experience overall!',
             },
+
+            // Doctors reviewing patients
+            {
+                reviewerId: doc1User.id,   // doctor reviewing patient
+                revieweeId: pat1User.id,   // patient being reviewed
+                rating: 5,
+                comment: 'Patient was very punctual and cooperative.',
+            },
+            {
+                reviewerId: doc2User.id,
+                revieweeId: pat2User.id,
+                rating: 4,
+                comment: 'Good communication and followed instructions.',
+            },
         ],
     });
+
     console.log('⭐ Reviews seeded.');
 
     // ===== CONVERSATION & MESSAGES =====

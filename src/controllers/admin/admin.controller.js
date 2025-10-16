@@ -82,7 +82,6 @@ exports.updateDepartment = async (req, res) => {
     }
 };
 
-
 // ===========================
 // Delete Department
 // ===========================
@@ -112,6 +111,7 @@ exports.deleteDepartment = async (req, res) => {
         res.status(500).json({ error: "Failed to delete department" });
     }
 };
+
 // ===========================
 // Get All Users
 // ===========================
@@ -383,5 +383,55 @@ exports.deleteRequest = async (req, res) => {
     } catch (err) {
         console.error("Delete request error:", err);
         res.status(500).json({ error: "Failed to delete doctor request" });
+    }
+};
+
+// =========================
+// Get Doctor Profile by ID (Admin)
+// =========================
+exports.getDoctorProfileById = async (req, res) => {
+    try {
+        const { doctorId } = req.params;
+
+        // Validate the provided doctorId
+        if (!doctorId) return res.status(400).json({ error: "Doctor ID is required" });
+
+        // Fetch the doctor by ID including all related data
+        const doctor = await prisma.doctor.findUnique({
+            where: { id: Number(doctorId) },
+            include: {
+                user: {
+                    select: {
+                        fullName: true,
+                        email: true,
+                        status: true,
+                    },
+                },
+                department: true,
+                availability: true,
+                pricing: true,
+                doctorUpdateRequests: true,
+                Payment: true,
+                Consultation: true,
+                DoctorSlot: true,
+            },
+        });
+
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        // Flatten out user info
+        const doctorData = {
+            ...doctor,
+            fullName: doctor.user?.fullName || null,
+            email: doctor.user?.email || null,
+            status: doctor.user?.status || null,
+        };
+        delete doctorData.user; // remove nested user object to keep response clean
+
+        res.json({ doctor: doctorData });
+
+    } catch (err) {
+        console.error("❌ Error fetching doctor profile by ID:", err);
+        res.status(500).json({ error: "Server error" });
     }
 };
