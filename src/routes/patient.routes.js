@@ -5,7 +5,8 @@ const upload = require("../middleware/upload");
 
 const {getAllDoctors, updatePatient, reserveSlot, cancelReservation, getMyAppointments, getMyDoctors, uploadMedicalRecord, getMedicalRecords, getPatientProfile, rescheduleAppointment,
     reviewDoctor,
-    updateDoctorReview
+    updateDoctorReview,
+    getDoctorById
 } = require("../controllers/patient/patient.controller");
 
 router.use(verifyToken, requireRole("PATIENT"));
@@ -33,4 +34,6 @@ router.post("/reschedule", rescheduleAppointment);
 router.post("/review", reviewDoctor);
 
 router.put("/review", updateDoctorReview);
+
+router.get("/doctor/:id", getDoctorById);
 module.exports = router;
