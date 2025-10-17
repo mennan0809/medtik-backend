@@ -63,59 +63,81 @@ exports.getAppointments = async (req, res) => {
         const user = req.user;
         let appointments;
 
-        if (user.role === Role.DOCTOR) {
-            // find the linked doctor first
-            const doctor = await prisma.doctor.findUnique({
-                where: { userId: user.id },
-            });
+        const includeSlim = {
+            doctor: {
+                select: {
+                    id: true,
+                    title: true,
+                    phone: true,
+                    user: { select: { fullName: true } },
+                    department: { select: { name: true } },
+                    avatarUrl: true,
+                },
+            },
+            patient: {
+                select: {
+                    id: true,
+                    phone: true,
+                    country: true,
+                    user: { select: { fullName: true } },
+                },
+            },
+        };
 
-            if (!doctor) {
-                return res.status(404).json({ error: "Doctor profile not found" });
-            }
+        if (user.role === Role.DOCTOR) {
+            const doctor = await prisma.doctor.findUnique({ where: { userId: user.id } });
+            if (!doctor) return res.status(404).json({ error: "Doctor profile not found" });
 
             appointments = await prisma.appointment.findMany({
                 where: { doctorId: doctor.id },
-                include: {
-                    doctor: true,
-                    patient: true,
-                    department: true,
-                },
+                include: includeSlim,
                 orderBy: { date: "desc" },
             });
-        } else if (user.role === Role.PATIENT) {
-            // find the linked patient first
-            const patient = await prisma.patient.findUnique({
-                where: { userId: user.id },
-            });
 
-            if (!patient) {
-                return res.status(404).json({ error: "Patient profile not found" });
-            }
+        } else if (user.role === Role.PATIENT) {
+            const patient = await prisma.patient.findUnique({ where: { userId: user.id } });
+            if (!patient) return res.status(404).json({ error: "Patient profile not found" });
 
             appointments = await prisma.appointment.findMany({
                 where: { patientId: patient.id },
-                include: {
-                    doctor: true,
-                    patient: true,
-                    department: true,
-                },
+                include: includeSlim,
                 orderBy: { date: "desc" },
             });
+
         } else if (user.role === Role.ADMIN) {
-            // Admin gets all appointments
             appointments = await prisma.appointment.findMany({
-                include: {
-                    doctor: true,
-                    patient: true,
-                    department: true,
-                },
+                include: includeSlim,
                 orderBy: { date: "desc" },
             });
         } else {
             return res.status(403).json({ error: "Unauthorized role" });
         }
 
-        res.json(appointments);
+        // Slim down each appointment object
+        const mapped = appointments.map(a => ({
+            id: a.id,
+            doctorId: a.doctorId,
+            patientId: a.patientId,
+            date: a.date,
+            appointmentType: a.appointmentType,
+            status: a.status,
+            doctor: {
+                id: a.doctor.id,
+                title: a.doctor.title,
+                phone: a.doctor.phone,
+                fullName: a.doctor.user.fullName,
+                department: a.doctor.department?.name || 'Unknown',
+                avatarUrl: a.doctor.avatarUrl,
+            },
+            patient: {
+                id: a.patient.id,
+                phone: a.patient.phone,
+                country: a.patient.country,
+                fullName: a.patient.user.fullName,
+            },
+        }));
+
+        res.json(mapped);
     } catch (error) {
         console.error("Error fetching appointments:", error);
         res.status(500).json({ error: "Failed to fetch appointments" });
@@ -127,50 +149,59 @@ exports.getPayments = async (req, res) => {
         const user = req.user;
         let payments;
 
+        const userSelect = {
+            select: { fullName: true, id: true } // include other fields if needed
+        };
+
         if (user.role === Role.DOCTOR) {
-            // find doctor linked to user
             const doctor = await prisma.doctor.findUnique({
                 where: { userId: user.id },
             });
 
-            if (!doctor) {
-                return res.status(404).json({ error: "Doctor profile not found" });
-            }
+            if (!doctor) return res.status(404).json({ error: "Doctor profile not found" });
 
             payments = await prisma.payment.findMany({
                 where: { doctorId: doctor.id },
                 include: {
-                    doctor: true,
-                    patient: true,
+                    doctor: {
+                        include: { user: userSelect },
+                    },
+                    patient: {
+                        include: { user: userSelect },
+                    },
                     appointment: true,
                 },
                 orderBy: { createdAt: "desc" },
             });
         } else if (user.role === Role.PATIENT) {
-            // find patient linked to user
             const patient = await prisma.patient.findUnique({
                 where: { userId: user.id },
             });
 
-            if (!patient) {
-                return res.status(404).json({ error: "Patient profile not found" });
-            }
+            if (!patient) return res.status(404).json({ error: "Patient profile not found" });
 
             payments = await prisma.payment.findMany({
                 where: { patientId: patient.id },
                 include: {
-                    doctor: true,
-                    patient: true,
+                    doctor: {
+                        include: { user: userSelect },
+                    },
+                    patient: {
+                        include: { user: userSelect },
+                    },
                     appointment: true,
                 },
                 orderBy: { createdAt: "desc" },
             });
         } else if (user.role === Role.ADMIN) {
-            // Admin gets everything
             payments = await prisma.payment.findMany({
                 include: {
-                    doctor: true,
-                    patient: true,
+                    doctor: {
+                        include: { user: userSelect },
+                    },
+                    patient: {
+                        include: { user: userSelect },
+                    },
                     appointment: true,
                 },
                 orderBy: { createdAt: "desc" },

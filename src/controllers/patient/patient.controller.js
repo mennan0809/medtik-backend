@@ -845,9 +845,8 @@ exports.updateDoctorReview = async (req, res) => {
 
 exports.getDoctorById = async (req, res) => {
     try {
-        const id = parseInt(req.params.id);
-
-        if (!id) return res.status(400).json({ error: "Doctor ID is required" });
+        const doctorId = parseInt(req.params.id);
+        if (!doctorId) return res.status(400).json({ error: "Doctor ID is required" });
 
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith("Bearer "))
@@ -857,7 +856,7 @@ exports.getDoctorById = async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
         const userId = decoded.id;
 
-        // Get patient's country
+        // Get patient's country for currency
         const patient = await prisma.user.findUnique({
             where: { id: parseInt(userId) },
             select: { patient: { select: { country: true } } },
@@ -867,121 +866,93 @@ exports.getDoctorById = async (req, res) => {
             return res.status(404).json({ error: "Patient not found" });
 
         const country = patient.patient.country;
-
-        // Determine currency
         let currency = "USD";
         if (country.toLowerCase() === "egypt") currency = "EGP";
         else if (country.toLowerCase() === "saudi arabia") currency = "SAR";
         else if (country.toLowerCase() === "uae") currency = "AED";
 
-        // Fetch doctor by ID with reviews
-        const doctor = await prisma.user.findUnique({
-            where: { id, role: "DOCTOR", status: "ACTIVE" },
-            select: {
-                id: true,
-                fullName: true,
-                email: true,
-                doctor: {
-                    select: {
-                        title: true,
-                        bio: true,
-                        phone: true,
-                        avatarUrl: true,
-                        languages: true,
-                        department: { select: { name: true } },
-                        cancellationPolicy: true,
-                        noShowPolicy: true,
-                        reschedulePolicy: true,
-                        pricing: {
-                            where: { currency },
-                            select: { service: true, price: true },
-                        },
-                        availability: true,
-                        DoctorSlot: {
-                            where: { status: "AVAILABLE" },
+        // Fetch doctor by doctor.id
+        const doctor = await prisma.doctor.findUnique({
+            where: { id: doctorId },
+            include: {
+                user: { select: { id: true, fullName: true, email: true, reviewsReceived: {
                             select: {
                                 id: true,
-                                date: true,
-                                startTime: true,
-                                endTime: true,
-                                chat: true,
-                                voice: true,
-                                video: true,
-                                notes: true,
+                                rating: true,
+                                comment: true,
+                                createdAt: true,
+                                reviewer: { select: { id: true, fullName: true } },
                             },
-                        },
-                    },
-                },
-                reviewsReceived: {
+                            orderBy: { createdAt: "desc" },
+                        },} },
+                department: { select: { name: true } },
+                pricing: { where: { currency }, select: { service: true, price: true } },
+                availability: true,
+                DoctorSlot: {
+                    where: { status: "AVAILABLE" },
                     select: {
                         id: true,
-                        rating: true,
-                        comment: true,
-                        createdAt: true,
-                        reviewer: {
-                            select: { id: true, fullName: true },
-                        },
+                        date: true,
+                        startTime: true,
+                        endTime: true,
+                        chat: true,
+                        voice: true,
+                        video: true,
+                        notes: true,
                     },
-                    orderBy: { createdAt: "desc" },
                 },
+
             },
         });
 
-        if (!doctor || !doctor.doctor)
+        if (!doctor)
             return res.status(404).json({ error: "Doctor not found" });
 
-        // Filter & format data
-        const availableServices = doctor.doctor.pricing.map((p) => p.service);
+        // Filter & format slots
+        const availableServices = doctor.pricing.map((p) => p.service);
 
-        const filteredSlots = doctor.doctor.DoctorSlot.map((slot) => ({
+        const filteredSlots = doctor.DoctorSlot.map((slot) => ({
             ...slot,
             chat: slot.chat && availableServices.includes("CHAT"),
             voice: slot.voice && availableServices.includes("VOICE"),
             video: slot.video && availableServices.includes("VIDEO"),
         })).filter((slot) => slot.chat || slot.voice || slot.video);
 
-        const adjustedAvailability = doctor.doctor.availability
+        const adjustedAvailability = doctor.availability
             ? {
-                chat:
-                    doctor.doctor.availability.chat &&
-                    availableServices.includes("CHAT"),
-                voice:
-                    doctor.doctor.availability.voice &&
-                    availableServices.includes("VOICE"),
-                video:
-                    doctor.doctor.availability.video &&
-                    availableServices.includes("VIDEO"),
+                chat: doctor.availability.chat && availableServices.includes("CHAT"),
+                voice: doctor.availability.voice && availableServices.includes("VOICE"),
+                video: doctor.availability.video && availableServices.includes("VIDEO"),
             }
             : null;
 
-        const totalReviews = doctor.reviewsReceived.length;
+        const totalReviews = doctor.user.reviewsReceived.length;
         const avgRating =
             totalReviews > 0
-                ? doctor.reviewsReceived.reduce((sum, r) => sum + r.rating, 0) /
-                totalReviews
+                ? doctor.user.reviewsReceived.reduce((sum, r) => sum + r.rating, 0) / totalReviews
                 : null;
 
         const formatted = {
             id: doctor.id,
-            fullName: doctor.fullName,
-            email: doctor.email,
-            title: doctor.doctor.title,
-            bio: doctor.doctor.bio,
-            phone: doctor.doctor.phone,
-            avatarUrl: doctor.doctor.avatarUrl,
-            languages: doctor.doctor.languages,
-            department: doctor.doctor.department?.name,
+            fullName: doctor.user.fullName,
+            email: doctor.user.email,
+            title: doctor.title,
+            bio: doctor.bio,
+            phone: doctor.phone,
+            avatarUrl: doctor.avatarUrl,
+            languages: doctor.languages,
+            department: doctor.department?.name,
             policies: {
-                cancellation: doctor.doctor.cancellationPolicy,
-                noShow: doctor.doctor.noShowPolicy,
-                reschedule: doctor.doctor.reschedulePolicy,
+                cancellation: doctor.cancellationPolicy,
+                noShow: doctor.noShowPolicy,
+                reschedule: doctor.reschedulePolicy,
             },
-            pricing: doctor.doctor.pricing,
+            pricing: doctor.pricing,
             availability: adjustedAvailability,
             availableSlots: filteredSlots,
             totalReviews,
             avgRating,
-            reviews: doctor.reviewsReceived.map((r) => ({
+            reviews: doctor.user.reviewsReceived.map((r) => ({
                 id: r.id,
                 rating: r.rating,
                 comment: r.comment,
