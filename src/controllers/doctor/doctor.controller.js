@@ -295,6 +295,7 @@ exports.getMyPatients = async (req, res) => {
                 NOT: { status: "CANCELLED" },
             },
             include: {
+                consultation: true,
                 patient: {
                     include: {
                         user: {
@@ -327,6 +328,7 @@ exports.getMyPatients = async (req, res) => {
                     birthdate: patient.birthdate,
                     records: patient.records,
                     lastAppointment: appt.date,
+                    consultation: appt.consultation,
                 });
             }
         });
