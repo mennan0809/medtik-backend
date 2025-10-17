@@ -136,6 +136,7 @@ async function main() {
             role: 'PATIENT',
             patient: {
                 create: {
+                    avatarUrl:"https://avatar.iran.liara.run/public/35",
                     gender: 'Female',
                     country: 'Egypt',
                     phone: '+201228136363',

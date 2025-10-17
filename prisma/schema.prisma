@@ -238,6 +238,7 @@ model Patient {
   phone     String
   birthdate DateTime
 
+  avatarUrl String?
   otp       String?
   otpExpiry DateTime?
   verified  Boolean   @default(false)

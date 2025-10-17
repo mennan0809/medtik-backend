@@ -25,6 +25,7 @@ exports.updatePatient = async (req, res) => {
             country,
             birthdate,
             gender,
+            avatarUrl
         } = req.body;
 
         // Prepare nested update
@@ -38,6 +39,7 @@ exports.updatePatient = async (req, res) => {
         if (country) patientData.country = country;
         if (birthdate) patientData.birthdate = new Date(birthdate);
         if (gender) patientData.gender = gender;
+        if(avatarUrl) patientData.avatarUrl = avatarUrl;
 
         const updatedPatient = await prisma.patient.update({
             where: { userId },
