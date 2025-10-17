@@ -10,7 +10,13 @@ const {
     markAppointmentNoShow,
     markAppointmentCompleted,
     rescheduleAppointment,
-    cancelAppointment, getMyAppointments
+    cancelAppointment,
+    getMyAppointments,
+    // ✅ consultations
+    createConsultation,
+    getConsultationsByAppointment,
+    updateConsultation,
+    deleteConsultation, getConsultationById
 } = require("../controllers/doctor/doctor.controller");
 
 const { verifyToken, requireRole } = require("../middleware/auth");
@@ -34,5 +40,12 @@ router.put("/appointments/:appointmentId/completed", markAppointmentCompleted);
 router.put("/appointments/:appointmentId/reschedule", rescheduleAppointment);
 router.put("/appointments/:appointmentId/cancel", cancelAppointment);
 
-// Export the router
+// =========================
+// Consultations (Doctor Only)
+// =========================
+router.post("/consultation/:appointmentId", createConsultation);
+router.get("/consultation/:appointmentId", getConsultationsByAppointment);
+router.put("/consultation/:consultationId", updateConsultation);
+router.delete("/consultation/:consultationId", deleteConsultation);
+
 module.exports = router;

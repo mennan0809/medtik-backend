@@ -17,7 +17,7 @@ CREATE TYPE "AppointmentStatus" AS ENUM ('PENDING_PAYMENT', 'CONFIRMED', 'CANCEL
 CREATE TYPE "RecordType" AS ENUM ('REPORT', 'PRESCRIPTION', 'LAB', 'IMAGING', 'OTHER');
 
 -- CreateEnum
-CREATE TYPE "NotificationType" AS ENUM ('APPOINTMENT', 'CHAT', 'PAYMENT', 'RECORD', 'SYSTEM');
+CREATE TYPE "NotificationType" AS ENUM ('APPOINTMENT', 'CHAT', 'PAYMENT', 'RECORD', 'SYSTEM', 'MESSAGE');
 
 -- CreateEnum
 CREATE TYPE "MessageType" AS ENUM ('TEXT', 'IMAGE', 'FILE', 'AUDIO', 'VIDEO');
@@ -132,6 +132,7 @@ CREATE TABLE "Patient" (
     "country" TEXT NOT NULL,
     "phone" TEXT NOT NULL,
     "birthdate" TIMESTAMP(3) NOT NULL,
+    "avatarUrl" TEXT,
     "otp" TEXT,
     "otpExpiry" TIMESTAMP(3),
     "verified" BOOLEAN NOT NULL DEFAULT false,
@@ -239,6 +240,7 @@ CREATE TABLE "Payment" (
     "amount" DOUBLE PRECISION NOT NULL,
     "currency" "Currency" NOT NULL,
     "status" "PaymentStatus" NOT NULL DEFAULT 'UNPAID',
+    "paymentUrl" TEXT,
     "paymobTransactionId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -250,12 +252,9 @@ CREATE TABLE "Payment" (
 CREATE TABLE "Consultation" (
     "id" SERIAL NOT NULL,
     "appointmentId" INTEGER NOT NULL,
-    "doctorId" INTEGER NOT NULL,
-    "patientId" INTEGER NOT NULL,
     "notes" TEXT,
     "diagnosis" TEXT,
     "prescriptions" TEXT,
-    "attachments" TEXT[],
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -302,6 +301,9 @@ CREATE UNIQUE INDEX "Patient_userId_key" ON "Patient"("userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Payment_appointmentId_key" ON "Payment"("appointmentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Consultation_appointmentId_key" ON "Consultation"("appointmentId");
 
 -- CreateIndex
 CREATE INDEX "_ConversationParticipants_B_index" ON "_ConversationParticipants"("B");
@@ -359,12 +361,6 @@ ALTER TABLE "Payment" ADD CONSTRAINT "Payment_patientId_fkey" FOREIGN KEY ("pati
 
 -- AddForeignKey
 ALTER TABLE "Consultation" ADD CONSTRAINT "Consultation_appointmentId_fkey" FOREIGN KEY ("appointmentId") REFERENCES "Appointment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Consultation" ADD CONSTRAINT "Consultation_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "Doctor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Consultation" ADD CONSTRAINT "Consultation_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "DoctorUpdateRequest" ADD CONSTRAINT "DoctorUpdateRequest_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "Doctor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

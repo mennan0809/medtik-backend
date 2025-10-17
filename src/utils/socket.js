@@ -17,12 +17,16 @@ function initSocket(server) {
         }
 
         socket.on('join', (userId) => {
-            onlineUsers.set(Number(userId), socket.id);
-            socket.join(String(userId));
-            console.log(`👤 User ${userId} joined socket room. Online users: ${onlineUsers.size}`);
+            userId = Number(userId);
+            const sockets = onlineUsers.get(userId) || new Set();
+            sockets.add(socket.id);
+            onlineUsers.set(userId, sockets);
+            socket.join(`user-${userId}`);
+            console.log(`👤 User ${userId} joined. Total online users: ${onlineUsers.size}`);
         });
 
         socket.on('chatFocused', ({ conversationId }) => {
+            console.log("FOCUSED");
             socket.activeConversation = conversationId;
             console.log(`💬 Socket ${socket.id} focused on conversation ${conversationId}`);
         });
@@ -35,7 +39,11 @@ function initSocket(server) {
         socket.on('markSeen', async ({ conversationId, userId }) => {
             try {
                 const result = await prisma.message.updateMany({
-                    where: { conversationId, receiverId: userId, seen: false },
+                    where: {
+                        conversationId,
+                        seen: false,
+                        NOT: { senderId: userId },
+                    },
                     data: { seen: true },
                 });
                 console.log(`✅ Messages marked seen for user ${userId} in conversation ${conversationId}: ${result.count}`);
@@ -43,6 +51,7 @@ function initSocket(server) {
                 console.error(`❌ Error marking messages as seen for user ${userId}:`, err.message);
             }
         });
+
 
         socket.on('disconnect', (reason) => {
             console.log(`❌ Socket disconnected: ${socket.id}`);
@@ -67,6 +76,7 @@ function getIO() {
 }
 
 function getOnlineUsers() {
+    console.log("HELLLOOO", [...onlineUsers.entries()]);
     return onlineUsers;
 }
 

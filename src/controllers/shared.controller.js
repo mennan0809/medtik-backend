@@ -64,6 +64,7 @@ exports.getAppointments = async (req, res) => {
         let appointments;
 
         const includeSlim = {
+            consultation: true,
             doctor: {
                 select: {
                     id: true,
@@ -121,6 +122,7 @@ exports.getAppointments = async (req, res) => {
             date: a.date,
             appointmentType: a.appointmentType,
             status: a.status,
+            consultation: a.consultation,
             doctor: {
                 userId: a.doctor.user.id,
                 id: a.doctor.id,

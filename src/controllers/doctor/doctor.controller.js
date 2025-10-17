@@ -185,7 +185,6 @@ exports.getDoctorProfile = async (req, res) => {
                         pricing: true,
                         doctorUpdateRequests: true,
                         Payment: true,
-                        Consultation: true,
                         DoctorSlot: true,
                     },
                 },
@@ -322,6 +321,7 @@ exports.getMyPatients = async (req, res) => {
             if (!patientsMap.has(patientId)) {
                 patientsMap.set(patientId, {
                     id: patientId,
+                    userId: patient.user.id,
                     fullName: patient.user.fullName,
                     email: patient.user.email,
                     birthdate: patient.birthdate,
@@ -837,6 +837,175 @@ exports.getMyAppointments = async (req, res) => {
         });
     } catch (err) {
         console.error("getMyAppointments error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+// =========================
+// CREATE Consultation
+// =========================
+exports.createConsultation = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const appointmentId = Number(req.params.appointmentId);
+        const { notes, diagnosis, prescriptions } = req.body;
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const appointment = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+        if (!appointment) return res.status(404).json({ error: "Appointment not found" });
+        if (appointment.doctorId !== doctor.id) return res.status(403).json({ error: "Not authorized for this appointment" });
+
+        const existing = await prisma.consultation.findUnique({ where: { appointmentId } });
+        if (existing) return res.status(400).json({ error: "Consultation already exists for this appointment" });
+
+        const consultation = await prisma.consultation.create({
+            data: {
+                appointmentId,
+                notes,
+                diagnosis,
+                prescriptions,
+            },
+        });
+
+        res.json({ message: "Consultation created", consultation });
+    } catch (err) {
+        console.error("createConsultation error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// READ (All Doctor's Consultations)
+// =========================
+exports.getMyConsultations = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const consultations = await prisma.consultation.findMany({
+            where: { doctorId: doctor.id },
+            include: {
+                appointment: true,
+                patient: { include: { user: { select: { id: true, fullName: true, email: true } } } },
+            },
+            orderBy: { createdAt: "desc" },
+        });
+
+        res.json({ message: "Consultations fetched", consultations });
+    } catch (err) {
+        console.error("getMyConsultations error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// READ Single Consultation
+// =========================
+exports.getConsultationById = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const { id } = req.params;
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const consultation = await prisma.consultation.findUnique({
+            where: { id: Number(id) },
+            include: {
+                appointment: true,
+                patient: { include: { user: { select: { id: true, fullName: true, email: true } } } },
+            },
+        });
+
+        if (!consultation || consultation.doctorId !== doctor.id) {
+            return res.status(403).json({ error: "Not authorized to view this consultation" });
+        }
+
+        res.json({ consultation });
+    } catch (err) {
+        console.error("getConsultationById error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// UPDATE Consultation
+// =========================
+exports.updateConsultation = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        console.log(req.params.consultationId);
+        const id = Number(req.params.consultationId);
+        const { notes, diagnosis, prescriptions } = req.body;
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const consultation = await prisma.consultation.findUnique({ where: { id: Number(id) } });
+        if (!consultation) {
+            return res.status(403).json({ error: "Consultation Not Found" });
+        }
+
+        const updated = await prisma.consultation.update({
+            where: { id: Number(id) },
+            data: { notes, diagnosis, prescriptions },
+        });
+
+        res.json({ message: "Consultation updated", consultation: updated });
+    } catch (err) {
+        console.error("updateConsultation error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// DELETE Consultation
+// =========================
+exports.deleteConsultation = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const  id  = req.params.consultationId;
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const consultation = await prisma.consultation.findUnique({ where: { id: Number(id) } });
+        if (!consultation) {
+            return res.status(403).json({ error: "Not authorized to delete this consultation" });
+        }
+
+        await prisma.consultation.delete({ where: { id: Number(id) } });
+        res.json({ message: "Consultation deleted" });
+    } catch (err) {
+        console.error("deleteConsultation error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// READ Consultations by Appointment
+// =========================
+exports.getConsultationsByAppointment = async (req, res) => {
+    try {
+        const doctorUserId = req.user.id;
+        const { appointmentId } = req.params;
+
+        const doctor = await prisma.doctor.findUnique({ where: { userId: doctorUserId } });
+        if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+        const appointment = await prisma.appointment.findUnique({ where: { id: Number(appointmentId) } });
+        if (!appointment) return res.status(404).json({ error: "Appointment not found" });
+        if (appointment.doctorId !== doctor.id) return res.status(403).json({ error: "Not authorized" });
+
+        const consultation = await prisma.consultation.findUnique({
+            where: { appointmentId: Number(appointmentId) }
+        });
+
+        res.json({ message: "Consultations fetched for appointment", consultation });
+    } catch (err) {
+        console.error("getConsultationsByAppointment error:", err);
         res.status(500).json({ error: "Server error" });
     }
 };

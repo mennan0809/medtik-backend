@@ -155,7 +155,6 @@ model Doctor {
   // Relations
   doctorUpdateRequests DoctorUpdateRequest[]
   Payment              Payment[]
-  Consultation         Consultation[]
   DoctorSlot           DoctorSlot[]
 
   Appointment Appointment[] @relation("DoctorAppointments")
@@ -243,9 +242,8 @@ model Patient {
   otpExpiry DateTime?
   verified  Boolean   @default(false)
 
-  records      MedicalRecord[]
-  Payment      Payment[]
-  Consultation Consultation[]
+  records MedicalRecord[]
+  Payment Payment[]
 
   Appointment Appointment[] @relation("PatientAppointments")
 }
@@ -278,13 +276,12 @@ model Appointment {
   appointmentType ServiceType
   status          AppointmentStatus @default(PENDING_PAYMENT)
 
-  date      DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  notes         String?
-  consultations Consultation[]
-  Payment       Payment?
+  date         DateTime
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  consultation Consultation? @relation
+  notes        String?
+  Payment      Payment?
 }
 
 // =========================
@@ -389,18 +386,11 @@ model Payment {
 model Consultation {
   id            Int         @id @default(autoincrement())
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
-  appointmentId Int
-
-  doctor   Doctor @relation(fields: [doctorId], references: [id])
-  doctorId Int
-
-  patient   Patient @relation(fields: [patientId], references: [id])
-  patientId Int
+  appointmentId Int         @unique
 
   notes         String?
   diagnosis     String?
   prescriptions String?
-  attachments   String[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
