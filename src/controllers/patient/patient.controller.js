@@ -873,9 +873,14 @@ exports.getDoctorById = async (req, res) => {
 
         // Fetch doctor by doctor.id
         const doctor = await prisma.doctor.findUnique({
-            where: { id: doctorId },
+            where: { userId: doctorId }, // <-- use userId instead of id
             include: {
-                user: { select: { id: true, fullName: true, email: true, reviewsReceived: {
+                user: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                        reviewsReceived: {
                             select: {
                                 id: true,
                                 rating: true,
@@ -884,7 +889,9 @@ exports.getDoctorById = async (req, res) => {
                                 reviewer: { select: { id: true, fullName: true } },
                             },
                             orderBy: { createdAt: "desc" },
-                        },} },
+                        },
+                    }
+                },
                 department: { select: { name: true } },
                 pricing: { where: { currency }, select: { service: true, price: true } },
                 availability: true,
@@ -901,7 +908,6 @@ exports.getDoctorById = async (req, res) => {
                         notes: true,
                     },
                 },
-
             },
         });
 
