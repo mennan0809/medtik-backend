@@ -69,7 +69,7 @@ exports.getAppointments = async (req, res) => {
                     id: true,
                     title: true,
                     phone: true,
-                    user: { select: { fullName: true } },
+                    user: { select: { id: true, fullName: true } },
                     department: { select: { name: true } },
                     avatarUrl: true,
                 },
@@ -122,6 +122,7 @@ exports.getAppointments = async (req, res) => {
             appointmentType: a.appointmentType,
             status: a.status,
             doctor: {
+                userId: a.doctor.user.id,
                 id: a.doctor.id,
                 title: a.doctor.title,
                 phone: a.doctor.phone,
@@ -136,7 +137,7 @@ exports.getAppointments = async (req, res) => {
                 fullName: a.patient.user.fullName,
             },
         }));
-
+        console.log(mapped);
         res.json(mapped);
     } catch (error) {
         console.error("Error fetching appointments:", error);
