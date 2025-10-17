@@ -939,6 +939,7 @@ exports.getDoctorById = async (req, res) => {
                 : null;
 
         const formatted = {
+            userId: doctor.user.id,
             id: doctor.id,
             fullName: doctor.user.fullName,
             email: doctor.user.email,
