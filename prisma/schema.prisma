@@ -57,6 +57,7 @@ enum NotificationType {
   PAYMENT
   RECORD
   SYSTEM
+  MESSAGE
 }
 
 enum MessageType {
@@ -372,13 +373,13 @@ model Payment {
   patient   Patient @relation(fields: [patientId], references: [id])
   patientId Int
 
-  amount   Float
-  currency Currency
-  status   PaymentStatus @default(UNPAID)
-
+  amount              Float
+  currency            Currency
+  status              PaymentStatus @default(UNPAID)
+  paymentUrl          String?
   paymobTransactionId String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 }
 
 // =========================

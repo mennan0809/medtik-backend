@@ -303,6 +303,11 @@ exports.reserveSlot = async (req, res) => {
         const IFRAME_ID = process.env.PAYMOB_IFRAME_ID;
         const redirectUrl = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentToken}`;
 
+        await prisma.payment.update({
+            where: { id: payment.id },
+            data: { paymentUrl: redirectUrl },
+        });
+
         res.json({
             message: "Slot reserved successfully. Redirect to payment URL.",
             redirectUrl,
@@ -403,7 +408,7 @@ exports.getMyDoctors = async (req, res) => {
                 doctor: {
                     include: {
                         user: { select: { id: true, fullName: true, email: true } },
-                        department: true,
+                        department: true
                     },
                 },
             },
@@ -416,11 +421,12 @@ exports.getMyDoctors = async (req, res) => {
             const doc = appt.doctor;
             if (!doctorsMap.has(doc.id)) {
                 doctorsMap.set(doc.id, {
+                    userId:doc.user.id,
                     id: doc.id,
+                    avatarUrl: doc.avatarUrl,
                     fullName: doc.user.fullName,
                     email: doc.user.email,
-                    department: doc.department?.name || null,
-                    lastAppointment: appt.date,
+                    department: doc.department?.name || null
                 });
             }
         });

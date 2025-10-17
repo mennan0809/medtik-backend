@@ -24,6 +24,7 @@ const getOrCreateConversation = async (sId, rId) => {
 // ===== Send Message =====
 exports.sendMessage = (io, onlineUsers) => async (req, res) => {
     try {
+        console.log("HELLO");
         const senderId = req.user.id;
         const { receiverId, content, type } = req.body;
 
