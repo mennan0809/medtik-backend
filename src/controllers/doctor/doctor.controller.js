@@ -127,8 +127,7 @@ exports.requestDoctorUpdate = async (req, res) => {
         if (types.length === 0)
             return res.status(400).json({ error: "No valid fields to update" });
 
-        // 🔥 if doctor is NEW, flip to PENDING
-        if (user.doctor.status === "NEW") {
+        if (user.doctor.status !== "ACCEPTED" ) {
             await prisma.doctor.update({
                 where: { id: user.doctor.id },
                 data: { status: "PENDING" }

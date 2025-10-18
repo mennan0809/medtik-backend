@@ -43,6 +43,41 @@ exports.registerPatient = async (req, res) => {
 };
 
 // ===========================
+// Resend OTP
+// ===========================
+exports.resendPatientOtp = async (req, res) => {
+    try {
+        const { phone, email } = req.body;
+
+        if (!phone && !email)
+            return res.status(400).json({ error: "Phone or email is required" });
+
+        // Find the patient
+        const patient = await prisma.patient.findFirst({
+            where: { user: { email } },
+            include: { user: true }
+        });
+
+        if (!patient)
+            return res.status(404).json({ error: "Patient not found" });
+
+        // Generate new OTP and expiry
+        const otp = await sendOtp({ phone: patient.phone, email: patient.user.email });
+        const expiry = new Date(Date.now() + 5 * 60 * 1000);
+
+        await prisma.patient.update({
+            where: { id: patient.id },
+            data: { otp, otpExpiry: expiry }
+        });
+
+        res.status(200).json({ message: "OTP resent successfully." });
+    } catch (err) {
+        console.error("Resend OTP error:", err);
+        res.status(500).json({ error: "Failed to resend OTP" });
+    }
+};
+
+// ===========================
 // OTP Verification with Resend on Expiry
 // ===========================
 exports.verifyOTP = async (req, res) => {
@@ -96,6 +131,7 @@ exports.verifyOTP = async (req, res) => {
         res.status(500).json({ error: "Verification failed" });
     }
 };
+
 // ===========================
 // Register Doctor
 // ===========================
@@ -172,6 +208,7 @@ exports.registerDoctor = async (req, res) => {
         res.status(500).json({ error: "Doctor registration failed" });
     }
 };
+
 // ===========================
 // Common Login (Patients, Doctors, Admins)
 // ===========================
@@ -183,7 +220,7 @@ exports.login = async (req, res) => {
             where: { email },
             include: {
                 patient: true,
-                doctor: true // ✅ include doctor info
+                doctor: true
             }
         });
 
@@ -192,24 +229,52 @@ exports.login = async (req, res) => {
         const validPass = await bcrypt.compare(password, user.password);
         if (!validPass) return res.status(400).json({ error: "Invalid credentials" });
 
-        // ✅ check banned users globally
+        // 🔒 check banned users
         if (user.status === "BANNED") {
             return res.status(403).json({ error: "Your account has been banned. Contact support." });
         }
 
-        // ✅ block unverified patients
-        if (user.role === "PATIENT" && !user.patient?.verified) {
-            return res.status(403).json({ error: "Please verify your account with OTP first." });
+        // 🧩 handle unverified patients
+        if (user.role === "PATIENT" && user.patient && !user.patient.verified) {
+            const now = new Date();
+            const otpExpired = !user.patient.otpExpiry || now > user.patient.otpExpiry;
+
+            if (otpExpired) {
+                const statusCallback = `${process.env.BACKEND_URL}/api/otp/status`;
+
+                // ✅ Send OTP to both email + phone
+                const otp = await sendOtp(
+                    { email: user.email, phone: user.patient.phone },
+                    statusCallback
+                );
+
+                const expiry = new Date(Date.now() + 5 * 60 * 1000);
+
+                await prisma.patient.update({
+                    where: { id: user.patient.id },
+                    data: { otp, otpExpiry: expiry }
+                });
+
+                return res.status(403).json({
+                    error: "Your OTP expired. A new one has been sent to your email and phone.",
+                    resend: true
+                });
+            }
+
+            return res.status(403).json({
+                error: "Please verify your account with the OTP sent to your email and phone."
+            });
         }
 
+        // ✅ create token
         const token = jwt.sign(
             { id: user.id, role: user.role },
             JWT_SECRET,
             { expiresIn: "1h" }
         );
 
-        // ✅ custom response depending on role
-        let responseData = {
+        // ✅ role-based response
+        const responseData = {
             message: "Login successful",
             token,
             role: user.role
@@ -220,12 +285,12 @@ exports.login = async (req, res) => {
         }
 
         res.json(responseData);
-
     } catch (err) {
         console.error("Login error:", err);
         res.status(500).json({ error: "Login failed" });
     }
 };
+
 // ===========================
 // Change Password (Authenticated User)
 // ===========================
@@ -252,6 +317,7 @@ exports.changePassword = async (req, res) => {
         res.status(500).json({ error: "Failed to change password" });
     }
 };
+
 // ===========================
 // Request Password Reset (Forgot Password)
 // ===========================
@@ -287,6 +353,7 @@ exports.requestPasswordReset = async (req, res) => {
         res.status(500).json({ error: "Failed to request password reset" });
     }
 };
+
 // ===========================
 // Reset Password with Reset Token
 // ===========================

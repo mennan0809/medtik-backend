@@ -6,6 +6,7 @@ const { verifyToken, requireRole } = require("../middleware/auth");
 // Patient registration + OTP flow
 router.post('/register-patient', authController.registerPatient);
 router.post('/verify-otp', authController.verifyOTP);
+router.post('/resend-otp', authController.resendPatientOtp);
 
 // Doctor Registration
 router.post(
