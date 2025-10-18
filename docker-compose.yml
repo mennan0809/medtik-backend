@@ -1,4 +1,4 @@
-version: '3.9'
+version: "3.9"
 
 services:
   db:
@@ -11,6 +11,8 @@ services:
       POSTGRES_DB: medtik_db
     ports:
       - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   backend:
     build: .
@@ -20,44 +22,27 @@ services:
       - db
     env_file:
       - .env
-    volumes:
-      - .:/app
-      - /app/node_modules
     ports:
       - "4000:4000"
+    environment:
+      NODE_ENV: production
     command: >
       sh -c "
-        npx prisma generate &&
-        npx prisma migrate dev --name init &&
-        npx prisma db seed &&
-        npm run dev 
+        npx prisma migrate deploy &&
+        npm start
       "
 
   prisma-studio:
     build: .
     container_name: medtik_prisma_studio
-    restart: always
     depends_on:
       - db
     env_file:
       - .env
-    volumes:
-      - .:/app
-      - /app/node_modules
     ports:
       - "5555:5555"
-    command: >
-      sh -c "
-        npx prisma generate &&
-        npx prisma studio --port 5555 --hostname 0.0.0.0
-      "
+    command: npx prisma studio --port 5555 --hostname 0.0.0.0
 
-  ngrok:
-    image: ngrok/ngrok:latest
-    command:
-      - "http"
-      - "http://host.docker.internal:4000"
-    environment:
-      NGROK_AUTHTOKEN: 33Waj3dZ58cnDFnA0bUif1JTWOG_6dNcDeYHQkxEV5ox5VZvZ
-    ports:
-      - "4040:4040"
+
+volumes:
+  pgdata:

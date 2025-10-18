@@ -58,6 +58,8 @@ exports.resendPatientOtp = async (req, res) => {
 
         if (!patient)
             return res.status(404).json({ error: "Patient not found" });
+        if(patient.verified)
+            return res.status(400).json({ error: "Patient is already verified" });
 
         // Generate new OTP and expiry
         const statusCallback = `${process.env.BACKEND_URL}/api/otp/status`;

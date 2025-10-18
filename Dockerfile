@@ -1,20 +1,23 @@
-# Use Node.js LTS
-FROM node:18
+# Use lightweight Node.js image
+FROM node:18-alpine
 
-# Create app directory
+# Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json first (for caching)
+# Copy only package files first for better caching
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (prod only)
+RUN npm ci --omit=dev
 
-# Copy the rest of your app
+# Copy rest of app
 COPY . .
 
-# Expose app port
+# Generate Prisma client
+RUN npx prisma generate
+
+# Expose backend port
 EXPOSE 4000
 
-# Default command (Docker Compose can override this)
-CMD ["npm", "run", "dev"]
+# Start the app
+CMD ["npm", "start"]
