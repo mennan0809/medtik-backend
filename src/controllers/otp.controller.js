@@ -8,7 +8,7 @@ exports.statusCallback = async (req, res) => {
     if (MessageStatus === "failed") {
         // Fallback to email
         const phone = To.replace("whatsapp:", "");
-        const patient = await prisma.patient.findUnique({
+        const patient = await prisma.patient.findFirst({
             where: { phone },
             include: { user: true }
         });
