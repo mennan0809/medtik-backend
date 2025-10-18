@@ -1,11 +1,17 @@
 const { Server } = require('socket.io');
 const prisma = require("../config/db");
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:4200";
 
 let io;
 const onlineUsers = new Map();
 
 function initSocket(server) {
-    io = new Server(server, { cors: { origin: '*' } });
+    const io = new Server(server, {
+        cors: {
+            origin: FRONTEND_URL,
+            credentials: true,
+        }
+    });
 
     io.on('connection', (socket) => {
         console.log(`🔌 New socket connected: ${socket.id}`);

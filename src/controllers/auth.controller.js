@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const { sendOtp } = require("../utils/otp");
 const { sendEmail } = require("../utils/email");
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+const AUTH_STRATEGY = process.env.AUTH_STRATEGY || "dev"; // "dev" or "prod"
 
 // ===========================
 // Patient Registration with OTP
@@ -237,25 +238,17 @@ exports.login = async (req, res) => {
         const validPass = await bcrypt.compare(password, user.password);
         if (!validPass) return res.status(400).json({ error: "Invalid credentials" });
 
-        // 🔒 check banned users
         if (user.status === "BANNED") {
             return res.status(403).json({ error: "Your account has been banned. Contact support." });
         }
 
-        // 🧩 handle unverified patients
         if (user.role === "PATIENT" && user.patient && !user.patient.verified) {
             const now = new Date();
             const otpExpired = !user.patient.otpExpiry || now > user.patient.otpExpiry;
 
             if (otpExpired) {
                 const statusCallback = `${process.env.BACKEND_URL}/api/otp/status`;
-
-                // ✅ Send OTP to both email + phone
-                const otp = await sendOtp(
-                    { email: user.email, phone: user.patient.phone },
-                    statusCallback
-                );
-
+                const otp = await sendOtp({ email: user.email, phone: user.patient.phone }, statusCallback);
                 const expiry = new Date(Date.now() + 5 * 60 * 1000);
 
                 await prisma.patient.update({
@@ -274,25 +267,38 @@ exports.login = async (req, res) => {
             });
         }
 
-        // ✅ create token
+        // ✅ Generate token
         const token = jwt.sign(
             { id: user.id, role: user.role },
             JWT_SECRET,
             { expiresIn: "1h" }
         );
 
-        // ✅ role-based response
+        // ✅ Prepare role-specific data
         const responseData = {
             message: "Login successful",
-            token,
-            role: user.role
+            role: user.role,
         };
 
         if (user.role === "DOCTOR") {
             responseData.doctorStatus = user.doctor?.status || "UNKNOWN";
         }
 
-        res.json(responseData);
+        // ✅ Handle token storage type
+        if (AUTH_STRATEGY === "prod") {
+            // use cookies
+            res.cookie("token", token, {
+                httpOnly: true,
+                secure: true,
+                sameSite: "None",
+                maxAge: 60 * 60 * 1000, // 1h
+            });
+            return res.json(responseData);
+        } else {
+            // use bearer for local/postman/dev
+            responseData.token = token;
+            return res.json(responseData);
+        }
     } catch (err) {
         console.error("Login error:", err);
         res.status(500).json({ error: "Login failed" });

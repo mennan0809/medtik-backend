@@ -6,13 +6,27 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const http = require('http');
 const prisma = require('./config/db');
-const { initSocket, getOnlineUsers } = require('./utils/socket'); // ✅ new import
+const { initSocket, getOnlineUsers } = require('./utils/socket');
 
 const app = express();
 
+// ===== Env Vars =====
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4200';
+const PORT = process.env.PORT || 4000;
+const AUTH_STRATEGY = process.env.AUTH_STRATEGY || 'dev';
+
 // ===== Middleware =====
 app.use(helmet());
-app.use(cors({ origin: '*', credentials: true }));
+
+app.use(cors({
+    origin: FRONTEND_URL,
+    credentials: true, // allow cookies + auth headers
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+app.use(cors({ origin: true, credentials: true }));
+
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(cookieParser());
@@ -37,14 +51,16 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/', sharedRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-// ===== Start server =====
+// ===== Socket.io =====
 const server = http.createServer(app);
-const io = initSocket(server); // ✅ initialize socket
-const onlineUsers = getOnlineUsers(); // ✅ keep access for chat routes
-
-// ===== Routes that need io =====
+const io = initSocket(server);
+const onlineUsers = getOnlineUsers();
 const chatRoutes = require('./routes/chat.routes')(io, onlineUsers);
 app.use('/api/chat', chatRoutes);
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+// ===== Start server =====
+server.listen(PORT, () =>
+    console.log(
+        `🚀 Server running on port ${PORT} | Mode: ${AUTH_STRATEGY.toUpperCase()} | Frontend: ${FRONTEND_URL}`
+    )
+);
