@@ -43,34 +43,40 @@ exports.registerPatient = async (req, res) => {
 };
 
 // ===========================
-// Resend OTP
+// Resend Patient OTP (Email Input Only)
 // ===========================
 exports.resendPatientOtp = async (req, res) => {
     try {
-        const { phone, email } = req.body;
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: "Email is required" });
 
-        if (!phone && !email)
-            return res.status(400).json({ error: "Phone or email is required" });
-
-        // Find the patient
+        // Find the patient and their phone via Prisma
         const patient = await prisma.patient.findFirst({
             where: { user: { email } },
-            include: { user: true }
+            include: { user: true },
         });
 
         if (!patient)
             return res.status(404).json({ error: "Patient not found" });
 
         // Generate new OTP and expiry
-        const otp = await sendOtp({ phone: patient.phone, email: patient.user.email });
+        const statusCallback = `${process.env.BACKEND_URL}/api/otp/status`;
+        const otp = await sendOtp(
+            { email: patient.user.email, phone: patient.phone },
+            statusCallback
+        );
+
         const expiry = new Date(Date.now() + 5 * 60 * 1000);
 
+        // Update OTP + expiry in DB
         await prisma.patient.update({
             where: { id: patient.id },
-            data: { otp, otpExpiry: expiry }
+            data: { otp, otpExpiry: expiry },
         });
 
-        res.status(200).json({ message: "OTP resent successfully." });
+        res.status(200).json({
+            message: "OTP resent successfully to your email and phone.",
+        });
     } catch (err) {
         console.error("Resend OTP error:", err);
         res.status(500).json({ error: "Failed to resend OTP" });
