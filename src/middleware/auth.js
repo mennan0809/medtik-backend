@@ -8,20 +8,31 @@ const AUTH_STRATEGY = process.env.AUTH_STRATEGY || "dev"; // "dev" or "prod"
 // Helper: Extract Token (Bearer or Cookie)
 // ===========================
 function extractToken(req) {
-    if (AUTH_STRATEGY === "prod") {
-        // token stored in cookie
-        return req.cookies?.token || null;
-    }
-
-    // dev: token sent in Authorization header
+    const cookieToken = req.cookies?.token;
     const authHeader = req.headers["authorization"];
-    if (!authHeader) return null;
 
-    const parts = authHeader.split(" ");
-    if (parts.length !== 2 || parts[0] !== "Bearer") return null;
+    const headerToken = (() => {
+        if (!authHeader) return null;
+        const parts = authHeader.split(" ");
+        return parts.length === 2 && parts[0] === "Bearer" ? parts[1] : null;
+    })();
 
-    return parts[1];
+    // 🪵 Debug logging
+    console.log("🧩 [extractToken] Incoming request:");
+    console.log("  - Origin:", req.headers.origin || "unknown");
+    console.log("  - Has Cookie Token:", !!cookieToken);
+    console.log("  - Has Header Token:", !!headerToken);
+    if (cookieToken) console.log("  - Cookie Token (truncated):", cookieToken.slice(0, 20) + "...");
+    if (headerToken) console.log("  - Header Token (truncated):", headerToken.slice(0, 20) + "...");
+
+    const token = cookieToken || headerToken;
+
+    console.log("  → Using token from:", cookieToken ? "cookie" : headerToken ? "header" : "none");
+
+    return token || null;
 }
+
+
 
 // ===========================
 // Verify Token Middleware
