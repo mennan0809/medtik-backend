@@ -20,12 +20,8 @@ app.use(helmet());
 
 app.use(cors({
     origin: FRONTEND_URL,
-    credentials: true, // allow cookies + auth headers
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
-
-app.use(cors({ origin: true, credentials: true }));
 
 app.use(morgan('dev'));
 app.use(express.json());

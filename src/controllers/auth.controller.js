@@ -286,6 +286,7 @@ exports.login = async (req, res) => {
 
         // ✅ Handle token storage type
         if (AUTH_STRATEGY === "prod") {
+            console.log("COOKIES");
             // use cookies
             res.cookie("token", token, {
                 httpOnly: true,
