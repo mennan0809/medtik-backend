@@ -256,7 +256,7 @@ exports.acceptRequest = async (req, res) => {
 
         if (payload.department) {
             updates.department = {
-                connect: { name: payload.department.name }
+                connect: { name: payload.department }
             };
         }
 
