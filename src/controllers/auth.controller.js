@@ -296,6 +296,9 @@ exports.login = async (req, res) => {
                 sameSite: "None",
                 maxAge: 60 * 60 * 1000, // 1h
             });
+
+            console.log(responseData);
+
             return res.json(responseData);
         } else {
             // use bearer for local/postman/dev
