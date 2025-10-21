@@ -235,6 +235,7 @@ model Patient {
   gender    String
   country   String
   phone     String
+  tempPhone String?
   birthdate DateTime
 
   avatarUrl String?

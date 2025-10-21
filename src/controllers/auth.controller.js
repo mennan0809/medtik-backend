@@ -142,6 +142,103 @@ exports.verifyOTP = async (req, res) => {
 };
 
 // ===========================
+// SEND OTP to New Phone
+// ===========================
+exports.sendPhoneVerificationOtp = async (req, res) => {
+    try {
+        const userId = req.user?.id; // assuming JWT middleware injects req.user
+        const { newPhone } = req.body;
+
+        if (!newPhone) return res.status(400).json({ error: "New phone number is required" });
+
+        // Find the patient
+        const patient = await prisma.patient.findUnique({
+            where: { userId },
+            include: { user: true },
+        });
+
+        if (!patient) return res.status(404).json({ error: "Patient not found" });
+
+        // Generate new OTP + expiry
+        const statusCallback = `${process.env.BACKEND_URL}/api/otp/status`;
+        const otp = await sendOtp({ phone: newPhone, email: patient.user.email }, statusCallback);
+        const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+
+        // Save pending phone + OTP in DB
+        await prisma.patient.update({
+            where: { id: patient.id },
+            data: {
+                tempPhone: newPhone,
+                otp,
+                otpExpiry,
+            },
+        });
+
+        res.status(200).json({ message: "OTP sent to new phone number." });
+    } catch (err) {
+        console.error("Send phone verification OTP error:", err);
+        res.status(500).json({ error: "Failed to send OTP" });
+    }
+};
+
+// ===========================
+// VERIFY New Phone OTP
+// ===========================
+exports.verifyPhoneOtp = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const { otp } = req.body;
+
+        if (!otp) return res.status(400).json({ error: "OTP is required" });
+
+        const patient = await prisma.patient.findUnique({
+            where: { userId },
+        });
+
+        if (!patient) return res.status(404).json({ error: "Patient not found" });
+        if (!patient.tempPhone) return res.status(400).json({ error: "No phone update in progress" });
+
+        // CASE 1: OTP expired
+        if (new Date() > patient.otpExpiry) {
+            const statusCallback = `${process.env.BACKEND_URL}/api/otp/status`;
+            const newOtp = await sendOtp({ phone: patient.tempPhone }, statusCallback);
+            const newExpiry = new Date(Date.now() + 5 * 60 * 1000);
+
+            await prisma.patient.update({
+                where: { id: patient.id },
+                data: { otp: newOtp, otpExpiry: newExpiry },
+            });
+
+            return res.status(400).json({
+                error: "OTP expired. A new one has been sent.",
+                resend: true,
+            });
+        }
+
+        // CASE 2: OTP mismatch
+        if (patient.otp !== otp) {
+            return res.status(400).json({ error: "Invalid OTP" });
+        }
+
+        // CASE 3: OTP valid → update phone permanently
+        await prisma.patient.update({
+            where: { id: patient.id },
+            data: {
+                phone: patient.tempPhone,
+                tempPhone: null,
+                otp: null,
+                otpExpiry: null,
+            },
+        });
+
+        res.status(200).json({ message: "Phone number verified and updated successfully." });
+    } catch (err) {
+        console.error("Verify phone OTP error:", err);
+        res.status(500).json({ error: "Phone verification failed" });
+    }
+};
+
+// ===========================
 // Register Doctor
 // ===========================
 exports.registerDoctor = async (req, res) => {

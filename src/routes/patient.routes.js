@@ -10,6 +10,7 @@ const {getAllDoctors, updatePatient, reserveSlot, cancelReservation, getMyAppoin
     editMedicalRecord,
     deleteMedicalRecord
 } = require("../controllers/patient/patient.controller");
+const {sendPhoneVerificationOtp, verifyPhoneOtp} = require("../controllers/auth.controller");
 
 router.use(verifyToken, requireRole("PATIENT"));
 
@@ -42,4 +43,8 @@ router.post("/review", reviewDoctor);
 router.put("/review", updateDoctorReview);
 
 router.get("/doctor/:id", getDoctorById);
+
+router.post("/phone/send-otp", sendPhoneVerificationOtp);
+
+router.post("/phone/verify-otp", verifyPhoneOtp);
 module.exports = router;
