@@ -284,6 +284,8 @@ exports.login = async (req, res) => {
             responseData.doctorStatus = user.doctor?.status || "UNKNOWN";
         }
 
+        console.log("ROLE: ", user.role);
+
         // ✅ Handle token storage type
         if (AUTH_STRATEGY === "prod") {
             console.log("COOKIES");
