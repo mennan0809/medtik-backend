@@ -8,11 +8,11 @@ function generateOTP() {
     return crypto.randomInt(100000, 999999).toString();
 }
 
-async function sendWhatsAppOtp(phone, otp, statusCallback) {
+async function sendSmsOtp(phone, otp, statusCallback) {
     try {
         const message = await client.messages.create({
             from: process.env.TWILIO_WHATSAPP_FROM,
-            to: `whatsapp:${phone}`,
+            to: phone,
             body: `Your Medtik OTP is: ${otp} (valid 5 minutes)`,
             statusCallback
         });
@@ -63,12 +63,11 @@ async function sendEmailOtp(email, otp) {
     }
 }
 
-module.exports = { sendEmailOtp };
 // Send OTP with callback URL for status updates
 async function sendOtp({ phone, email }, statusCallback) {
     const otp = generateOTP();
 
-    const sent = await sendWhatsAppOtp(phone, otp, statusCallback);
+    const sent = await sendSmsOtp(phone, otp, statusCallback);
     if (!sent) {
         await sendEmailOtp(email, otp);
     }
@@ -76,4 +75,4 @@ async function sendOtp({ phone, email }, statusCallback) {
     return otp;
 }
 
-module.exports = { generateOTP, sendOtp, sendWhatsAppOtp, sendEmailOtp };
+module.exports = { generateOTP, sendOtp, sendSmsOtp, sendEmailOtp };
