@@ -9,13 +9,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 exports.updatePatient = async (req, res) => {
     try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id; // from token
+        const userId = req.user.id;
 
         const {
             fullName,
@@ -66,16 +60,7 @@ exports.updatePatient = async (req, res) => {
 
 exports.getAllDoctors = async (req, res) => {
     try {
-        // Get user from token
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        console.log("  - Decoded token:", decoded);
-
-        const userId = decoded.id;
+        const userId = req.user.id;
 
         // Get patient's country
         const patient = await prisma.user.findUnique({
@@ -858,13 +843,7 @@ exports.getDoctorById = async (req, res) => {
         const doctorId = parseInt(req.params.id);
         if (!doctorId) return res.status(400).json({ error: "Doctor ID is required" });
 
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
+        const userId = req.user.id;
 
         // Get patient's country for currency
         const patient = await prisma.user.findUnique({

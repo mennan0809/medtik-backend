@@ -222,14 +222,7 @@ exports.getPayments = async (req, res) => {
 
 exports.getMyReviews = async (req, res) => {
     try {
-        // Get user from token
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
+        const userId = req.user.id;
 
         // Fetch reviews for this user
         const reviews = await prisma.review.findMany({
@@ -276,14 +269,7 @@ exports.getMyReviews = async (req, res) => {
 
 exports.getMyWrittenReviews = async (req, res) => {
     try {
-        // Get user from token
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
+        const userId = req.user.id;
 
         // Fetch reviews written by this user
         const reviews = await prisma.review.findMany({

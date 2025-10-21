@@ -12,19 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // =========================
 exports.requestDoctorUpdate = async (req, res) => {
     try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer "))
-            return res.status(401).json({ error: "No token" });
-
-        const token = authHeader.split(" ")[1];
-        let decoded;
-        try {
-            decoded = jwt.verify(token, JWT_SECRET);
-        } catch (err) {
-            return res.status(401).json({ error: "Invalid token" });
-        }
-
-        const userId = decoded.id;
+        const userId = req.user.id;
         const user = await prisma.user.findUnique({
             where: { id: userId },
             include: { doctor: true }
@@ -162,12 +150,7 @@ exports.requestDoctorUpdate = async (req, res) => {
 // =========================
 exports.getDoctorProfile = async (req, res) => {
     try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith("Bearer ")) return res.status(401).json({ error: "No token" });
-
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
+        const userId = req.user.id;
 
         const user = await prisma.user.findUnique({
             where: { id: userId },
