@@ -73,6 +73,8 @@ exports.getAllDoctors = async (req, res) => {
 
         const token = authHeader.split(" ")[1];
         const decoded = jwt.verify(token, JWT_SECRET);
+        console.log("  - Decoded token:", decoded);
+
         const userId = decoded.id;
 
         // Get patient's country
