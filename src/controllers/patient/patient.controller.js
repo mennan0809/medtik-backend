@@ -5,7 +5,8 @@ const paymobService = require("../../services/paymob.service");
 const { convertToEGP } = require("../../services/currency.service");
 const {pushNotification} = require("../../utils/notifications");
 const JWT_SECRET = process.env.JWT_SECRET;
-
+const fs = require("fs");
+const path = require("path");
 
 exports.updatePatient = async (req, res) => {
     try {
@@ -432,25 +433,23 @@ exports.getMyDoctors = async (req, res) => {
 // =========================
 exports.uploadMedicalRecord = async (req, res) => {
     try {
-        const patientUserId = req.user.id; // from auth middleware
+        const patientUserId = req.user.id;
         const file = req.file;
         const { type, notes } = req.body;
 
         if (!file) return res.status(400).json({ error: "File is required" });
 
-        // Find patient
         const patient = await prisma.patient.findUnique({
             where: { userId: patientUserId },
         });
 
         if (!patient) return res.status(404).json({ error: "Patient not found" });
 
-        // Save record in DB
         const record = await prisma.medicalRecord.create({
             data: {
                 patientId: patient.id,
                 type,
-                fileUrl: `/uploads/${file.filename}`, // store path on server
+                fileUrl: `/uploads/${file.filename}`,
                 notes,
             },
         });
@@ -462,6 +461,9 @@ exports.uploadMedicalRecord = async (req, res) => {
     }
 };
 
+// =========================
+// Get All Medical Records
+// =========================
 exports.getMedicalRecords = async (req, res) => {
     try {
         const patientUserId = req.user.id;
@@ -479,6 +481,77 @@ exports.getMedicalRecords = async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 };
+
+// =========================
+// Edit Medical Record
+// =========================
+exports.editMedicalRecord = async (req, res) => {
+    try {
+        const patientUserId = req.user.id;
+        const recordId = parseInt(req.params.id);
+        const { type, notes } = req.body;
+        const file = req.file;
+
+        const record = await prisma.medicalRecord.findUnique({
+            where: { id: recordId },
+            include: { patient: true },
+        });
+
+        if (!record) return res.status(404).json({ error: "Record not found" });
+        if (record.patient.userId !== patientUserId)
+            return res.status(403).json({ error: "Not authorized" });
+
+        let updatedData = { type, notes };
+
+        // If new file uploaded, delete old one + update URL
+        if (file) {
+            const oldPath = path.join(__dirname, "..", record.fileUrl);
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+            updatedData.fileUrl = `/uploads/${file.filename}`;
+        }
+
+        const updated = await prisma.medicalRecord.update({
+            where: { id: recordId },
+            data: updatedData,
+        });
+
+        res.json({ message: "Medical record updated", updated });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
+// =========================
+// Delete Medical Record
+// =========================
+exports.deleteMedicalRecord = async (req, res) => {
+    try {
+        const patientUserId = req.user.id;
+        const recordId = parseInt(req.params.id);
+
+        const record = await prisma.medicalRecord.findUnique({
+            where: { id: recordId },
+            include: { patient: true },
+        });
+
+        if (!record) return res.status(404).json({ error: "Record not found" });
+        if (record.patient.userId !== patientUserId)
+            return res.status(403).json({ error: "Not authorized" });
+
+        // Delete file if exists
+        const filePath = path.join(__dirname, "..", record.fileUrl);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+        await prisma.medicalRecord.delete({ where: { id: recordId } });
+
+        res.json({ message: "Medical record deleted" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
+};
+
 // =========================
 // GET PATIENT PROFILE
 // =========================

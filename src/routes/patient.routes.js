@@ -6,7 +6,9 @@ const upload = require("../middleware/upload");
 const {getAllDoctors, updatePatient, reserveSlot, cancelReservation, getMyAppointments, getMyDoctors, uploadMedicalRecord, getMedicalRecords, getPatientProfile, rescheduleAppointment,
     reviewDoctor,
     updateDoctorReview,
-    getDoctorById
+    getDoctorById,
+    editMedicalRecord,
+    deleteMedicalRecord
 } = require("../controllers/patient/patient.controller");
 
 router.use(verifyToken, requireRole("PATIENT"));
@@ -26,6 +28,10 @@ router.get("/getMyDoctors", getMyDoctors);
 router.post("/records",  upload.single("file"), uploadMedicalRecord );
 
 router.get("/records", getMedicalRecords);
+
+router.put("/records/:id", upload.single("file"), editMedicalRecord);
+
+router.delete("/records/:id", deleteMedicalRecord);
 
 router.get("/profile", getPatientProfile);
 
