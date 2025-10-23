@@ -920,7 +920,6 @@ exports.getConsultationById = async (req, res) => {
 exports.updateConsultation = async (req, res) => {
     try {
         const doctorUserId = req.user.id;
-        console.log(req.params.consultationId);
         const id = Number(req.params.consultationId);
         const { notes, diagnosis, prescriptions } = req.body;
 

@@ -252,8 +252,6 @@ exports.acceptRequest = async (req, res) => {
             });
         }
 
-        console.log("DEPT: ", payload.department);
-
         if (payload.department) {
             updates.department = {
                 connect: { name: payload.department }

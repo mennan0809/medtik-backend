@@ -176,7 +176,7 @@ async function main() {
         data: [
             {
                 doctorId: doc1User.doctor.id,
-                date: new Date('2025-10-10'),
+                date: new Date('2025-11-01'),
                 startTime: new Date('2025-10-10T09:00:00Z'),
                 endTime: new Date('2025-10-10T09:30:00Z'),
                 chat: true,
@@ -184,7 +184,7 @@ async function main() {
             },
             {
                 doctorId: doc2User.doctor.id,
-                date: new Date('2025-10-11'),
+                date: new Date('2025-11-01'),
                 startTime: new Date('2025-10-11T10:00:00Z'),
                 endTime: new Date('2025-10-11T10:30:00Z'),
                 voice: true,

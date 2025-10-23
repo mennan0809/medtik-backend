@@ -41,6 +41,7 @@ const patientRoutes = require('./routes/patient.routes');
 const sharedRoutes = require('./routes/shared.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const notificationRoutes = require('./routes/notifications.routes');
+const chatRoutes = require('./routes/chat.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/otp', otpRoutes);
@@ -50,13 +51,11 @@ app.use('/api/patient', patientRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/', sharedRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/chat', chatRoutes);
 
 // ===== Socket.io =====
 const server = http.createServer(app);
 const io = initSocket(server);
-const onlineUsers = getOnlineUsers();
-const chatRoutes = require('./routes/chat.routes')(io, onlineUsers);
-app.use('/api/chat', chatRoutes);
 
 // ===== Start server =====
 server.listen(PORT, () =>

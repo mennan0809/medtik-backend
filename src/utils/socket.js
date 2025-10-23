@@ -6,7 +6,7 @@ let io;
 const onlineUsers = new Map();
 
 function initSocket(server) {
-    const io = new Server(server, {
+    io = new Server(server, {
         cors: {
             origin: FRONTEND_URL,
             credentials: true,
@@ -27,8 +27,12 @@ function initSocket(server) {
             const sockets = onlineUsers.get(userId) || new Set();
             sockets.add(socket.id);
             onlineUsers.set(userId, sockets);
-            socket.join(`user-${userId}`);
+            socket.join(String(userId));
             console.log(`👤 User ${userId} joined. Total online users: ${onlineUsers.size}`);
+        });
+
+        socket.on('notification:new', (data) => {
+            console.log('📩 New notification received:', data);
         });
 
         socket.on('chatFocused', ({ conversationId }) => {
@@ -73,6 +77,7 @@ function initSocket(server) {
     });
 
     console.log('⚡ Socket.IO server initialized');
+
     return io;
 }
 

@@ -139,7 +139,6 @@ exports.getAppointments = async (req, res) => {
                 fullName: a.patient.user.fullName,
             },
         }));
-        console.log(mapped);
         res.json(mapped);
     } catch (error) {
         console.error("Error fetching appointments:", error);

@@ -30,6 +30,7 @@ async function pushNotification({ userId, type, title, message, redirectUrl = nu
         // 2️⃣ Emit real-time notification via socket
         const io = getIO();
         if (io) {
+            console.log("EMMITTED");
             io.to(String(userId)).emit("notification:new", notification);
         }
     } catch (err) {

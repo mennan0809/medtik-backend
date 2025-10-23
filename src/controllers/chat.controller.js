@@ -1,5 +1,5 @@
 const prisma = require('../config/db');
-const { getOnlineUsers } = require('../utils/socket');
+const { getOnlineUsers, getIO} = require('../utils/socket');
 
 // ===== Helper: find or create a conversation between two users =====
 const getOrCreateConversation = async (sId, rId) => {
@@ -40,12 +40,14 @@ const createNotification = (userId, sender, messageId) =>
     });
 
 // ===== Send Message =====
-exports.sendMessage = (io) => async (req, res) => {
+exports.sendMessage = async (req, res) => {
     try {
+        console.log("HELLOOO");
+
         const senderId = Number(req.user.id);
         const { receiverId, content, type } = req.body;
         const rId = Number(receiverId);
-
+        console.log("IO"+getIO());
         const conversation = await getOrCreateConversation(senderId, rId);
 
         const rawMessage = await prisma.message.create({
@@ -78,7 +80,7 @@ exports.sendMessage = (io) => async (req, res) => {
         if (receiverSockets && receiverSockets.size > 0) {
             let seenMarked = false;
             for (const sid of receiverSockets) {
-                const socket = io.sockets.sockets.get(sid);
+                const socket = getIO().sockets.sockets.get(sid);
                 if (socket) {
                     // Mark as seen if user is actively viewing
                     if (socket.activeConversation === conversation.id && !seenMarked) {
@@ -87,10 +89,10 @@ exports.sendMessage = (io) => async (req, res) => {
                             data: { seen: true },
                         });
                         seenMarked = true;
-                        io.to(sid).emit('newMessage', message);
+                        getIO().to(sid).emit('newMessage', message);
                         continue;
                     }
-                    io.to(sid).emit('newMessage', message);
+                    getIO().to(sid).emit('newMessage', message);
                 }
             }
 

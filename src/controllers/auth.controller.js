@@ -381,11 +381,8 @@ exports.login = async (req, res) => {
             responseData.doctorStatus = user.doctor?.status || "UNKNOWN";
         }
 
-        console.log("ROLE: ", user.role);
-
         // ✅ Handle token storage type
         if (AUTH_STRATEGY === "prod") {
-            console.log("COOKIES");
             // use cookies
             res.cookie("token", token, {
                 httpOnly: true,
@@ -393,8 +390,6 @@ exports.login = async (req, res) => {
                 sameSite: "None",
                 maxAge: 60 * 60 * 1000, // 1h
             });
-
-            console.log(responseData);
 
             return res.json(responseData);
         } else {
