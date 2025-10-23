@@ -18,10 +18,14 @@ const AUTH_STRATEGY = process.env.AUTH_STRATEGY || 'dev';
 // ===== Middleware =====
 app.use(helmet());
 
-app.use(cors({
-    origin: FRONTEND_URL,
-    credentials: true
-}));
+if (AUTH_STRATEGY === 'dev') {
+    app.use(cors());
+} else {
+    app.use(cors({
+        origin: FRONTEND_URL,
+        credentials: true,
+    }));
+}
 
 app.use(morgan('dev'));
 app.use(express.json());
