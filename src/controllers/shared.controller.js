@@ -80,6 +80,7 @@ exports.getAppointments = async (req, res) => {
                     id: true,
                     phone: true,
                     country: true,
+                    avatarUrl: true,
                     user: { select: { fullName: true } },
                 },
             },
@@ -134,6 +135,7 @@ exports.getAppointments = async (req, res) => {
             },
             patient: {
                 id: a.patient.id,
+                avatarUrl: a.patient.avatarUrl,
                 phone: a.patient.phone,
                 country: a.patient.country,
                 fullName: a.patient.user.fullName,
