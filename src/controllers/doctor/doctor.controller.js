@@ -308,6 +308,7 @@ exports.getMyPatients = async (req, res) => {
                     fullName: patient.user.fullName,
                     email: patient.user.email,
                     birthdate: patient.birthdate,
+                    avatar: patient.avatarUrl,
                     records: patient.records,
                     lastAppointment: appt.date,
                     consultation: appt.consultation,
