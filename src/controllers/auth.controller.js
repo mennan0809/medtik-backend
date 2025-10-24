@@ -339,6 +339,7 @@ exports.login = async (req, res) => {
             return res.status(403).json({ error: "Your account has been banned. Contact support." });
         }
 
+        // ✅ Patient verification check
         if (user.role === "PATIENT" && user.patient && !user.patient.verified) {
             const now = new Date();
             const otpExpired = !user.patient.otpExpiry || now > user.patient.otpExpiry;
@@ -374,6 +375,7 @@ exports.login = async (req, res) => {
         // ✅ Prepare role-specific data
         const responseData = {
             message: "Login successful",
+            id: user.id,              // 👈 add this
             role: user.role,
         };
 

@@ -1,5 +1,6 @@
 const { Server } = require('socket.io');
 const prisma = require("../config/db");
+const cors = require("cors");
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:4200";
 
 let io;
@@ -17,9 +18,26 @@ function initSocket(server) {
         console.log(`🔌 New socket connected: ${socket.id}`);
         socket.activeConversation = null;
         const role = socket.handshake.auth.role;
+        const userId = socket.handshake.auth.userId;
 
         if (role === "ADMIN") {
             socket.join("admins");
+            console.log(`🧑‍💼 Admin socket joined "admins" room`);
+        }
+
+        if (userId) {
+            // add to onlineUsers map
+            const sockets = onlineUsers.get(userId) || new Set();
+            sockets.add(socket.id);
+            onlineUsers.set(userId, sockets);
+            socket.join(String(userId));
+
+            console.log(`👤 User ${userId} connected (${socket.id})`);
+            console.log(`🧠 Current onlineUsers map:`,
+                Object.fromEntries([...onlineUsers].map(([k, v]) => [k, [...v]]))
+            );
+        } else {
+            console.warn(`⚠️ No userId in handshake auth`);
         }
 
         socket.on('join', (userId) => {
@@ -67,12 +85,13 @@ function initSocket(server) {
             console.log(`❌ Socket disconnected: ${socket.id}`);
             console.log(`ℹ️ Disconnect reason: ${reason}`); // <-- log reason
 
-            for (let [uid, sid] of onlineUsers.entries()) {
-                if (sid === socket.id) {
+            for (let [uid, sockets] of onlineUsers.entries()) {
+                sockets.delete(socket.id);
+                if (sockets.size === 0) {
                     onlineUsers.delete(uid);
-                    console.log(`🧹 Removed user ${uid} from online users. Remaining: ${onlineUsers.size}`);
                 }
             }
+
         });
     });
 

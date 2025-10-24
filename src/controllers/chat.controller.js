@@ -1,5 +1,6 @@
 const prisma = require('../config/db');
 const { getOnlineUsers, getIO} = require('../utils/socket');
+const { pushNotification } = require('../utils/notifications');
 
 // ===== Helper: find or create a conversation between two users =====
 const getOrCreateConversation = async (sId, rId) => {
@@ -27,29 +28,39 @@ const getOrCreateConversation = async (sId, rId) => {
 };
 
 // ===== Helper: create notification =====
-const createNotification = (userId, sender, messageId) =>
-    prisma.notification.create({
-        data: {
-            userId,
-            type: 'MESSAGE',
-            title: 'New Message',
-            message: `${sender.fullName} sent you a message.`,
-            redirectUrl: `/chat/${sender.id}`,
-            metadata: { senderId: sender.id, messageId },
-        },
+const createNotification = (userId, sender, messageId) => {
+    return pushNotification({
+        userId,
+        type: 'MESSAGE',
+        title: 'New Message',
+        message: `${sender.fullName} sent you a message.`,
+        redirectUrl: `/chat/${sender.id}`,
+        metadata: { senderId: sender.id, messageId }
     });
+};
 
-// ===== Send Message =====
+// ===== Send Message (with Debug Logs) =====
 exports.sendMessage = async (req, res) => {
     try {
-        console.log("HELLOOO");
-
         const senderId = Number(req.user.id);
         const { receiverId, content, type } = req.body;
         const rId = Number(receiverId);
-        console.log("IO"+getIO());
-        const conversation = await getOrCreateConversation(senderId, rId);
 
+        console.log('\n🚀 [sendMessage] Incoming message...');
+        console.log('   🔹 Sender ID:', senderId);
+        console.log('   🔹 Receiver ID:', rId);
+        console.log('   🔹 Content:', content);
+        console.log('   🔹 Type:', type);
+
+        // =========================
+        // 1️⃣ Get or create conversation
+        // =========================
+        const conversation = await getOrCreateConversation(senderId, rId);
+        console.log('🗨️  Conversation:', conversation?.id);
+
+        // =========================
+        // 2️⃣ Create message
+        // =========================
         const rawMessage = await prisma.message.create({
             data: {
                 conversationId: conversation.id,
@@ -57,57 +68,93 @@ exports.sendMessage = async (req, res) => {
                 content,
                 type: type || 'TEXT',
             },
-            include: { sender: { select: { id: true, fullName: true } } },
+            include: {
+                sender: { select: { id: true, fullName: true } },
+            },
         });
 
-        const onlineUsers = await getOnlineUsers();
-        const receiverSockets = onlineUsers.get(rId); // Set of socket IDs
+        console.log('💾 Message created in DB:', {
+            id: rawMessage.id,
+            senderId: rawMessage.senderId,
+            receiverId: rId,
+            content: rawMessage.content,
+            type: rawMessage.type,
+        });
+
+        // =========================
+        // 3️⃣ Prepare message payload
+        // =========================
         const message = {
             id: String(rawMessage.id),
-            senderId: rawMessage.senderId,
+            senderId,
             receiverId: rId,
             text: rawMessage.content,
             type: rawMessage.type,
             ts: rawMessage.createdAt,
-            seen:false,
+            seen: false,
             sender: {
                 id: rawMessage.sender.id,
                 fullName: rawMessage.sender.fullName,
             },
         };
 
-        // Inside sendMessage
+        const io = getIO();
+        const onlineUsers = await getOnlineUsers(); // If async, keep await
+        const receiverSockets = onlineUsers.get(rId); // Set<socketId>
+
+        console.log('🧠 Online users map size:', onlineUsers.size);
+        console.log('   🧩 Receiver sockets:', receiverSockets ? Array.from(receiverSockets) : '❌ None found');
+
+        let seenMarked = false;
+
+        // =========================
+        // 4️⃣ Emit messages
+        // =========================
         if (receiverSockets && receiverSockets.size > 0) {
-            let seenMarked = false;
+            console.log('📡 Receiver online — sending messages...');
             for (const sid of receiverSockets) {
-                const socket = getIO().sockets.sockets.get(sid);
-                if (socket) {
-                    // Mark as seen if user is actively viewing
-                    if (socket.activeConversation === conversation.id && !seenMarked) {
-                        await prisma.message.update({
-                            where: { id: rawMessage.id },
-                            data: { seen: true },
-                        });
-                        seenMarked = true;
-                        getIO().to(sid).emit('newMessage', message);
-                        continue;
-                    }
-                    getIO().to(sid).emit('newMessage', message);
+                const socket = io.sockets.sockets.get(sid);
+                if (!socket) {
+                    console.warn(`   ⚠️ Socket ${sid} not found (probably disconnected)`);
+                    continue;
                 }
+
+                console.log(`   🔸 Sending to socket ${sid}`);
+                console.log(`      ↪ activeConversation: ${socket.activeConversation}`);
+                console.log(`      ↪ targetConversation: ${conversation.id}`);
+
+                // Mark as seen if receiver is viewing same conversation
+                if (socket.activeConversation === conversation.id && !seenMarked) {
+                    console.log('   👀 Receiver is viewing this convo → marking as seen...');
+                    await prisma.message.update({
+                        where: { id: rawMessage.id },
+                        data: { seen: true },
+                    });
+                    seenMarked = true;
+
+                    io.to(socket.id).emit('messageAck', { messageId: rawMessage.id });
+                    console.log('   ✅ Seen + messageAck emitted');
+                }
+
+                // Always deliver the message
+                io.to(socket.id).emit('newMessage', message);
+                console.log('   📤 Message emitted to', sid);
             }
 
             if (!seenMarked) {
+                console.log('🔔 No socket in active convo → creating notification');
                 await createNotification(rId, rawMessage.sender, rawMessage.id);
             }
-        }
-        else {
+        } else {
             // Receiver offline → create notification
+            console.log('💤 Receiver is offline → creating notification...');
             await createNotification(rId, rawMessage.sender, rawMessage.id);
         }
 
+        console.log('✅ [sendMessage] Completed successfully.\n');
         res.json({ success: true, message: rawMessage });
     } catch (err) {
-        console.error(err);
+        console.error('\n❌ [sendMessage] ERROR:', err);
         res.status(500).json({ error: 'Failed to send message' });
     }
 };
