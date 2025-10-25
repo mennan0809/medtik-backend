@@ -36,6 +36,8 @@ function initSocket(server) {
             console.log(`🧠 Current onlineUsers map:`,
                 Object.fromEntries([...onlineUsers].map(([k, v]) => [k, [...v]]))
             );
+            io.emit('user:online', { userId });
+            socket.emit('online:all', [...onlineUsers.keys()]);
         } else {
             console.warn(`⚠️ No userId in handshake auth`);
         }
@@ -46,6 +48,9 @@ function initSocket(server) {
             sockets.add(socket.id);
             onlineUsers.set(userId, sockets);
             socket.join(String(userId));
+            io.emit('user:online', { userId });
+            socket.emit('online:all', [...onlineUsers.keys()]);
+
             console.log(`👤 User ${userId} joined. Total online users: ${onlineUsers.size}`);
         });
 
@@ -89,6 +94,7 @@ function initSocket(server) {
                 sockets.delete(socket.id);
                 if (sockets.size === 0) {
                     onlineUsers.delete(uid);
+                    io.emit('user:offline', { userId: uid });
                 }
             }
 

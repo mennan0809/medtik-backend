@@ -213,3 +213,85 @@ exports.getConversations = async (req, res) => {
         res.status(500).json({ error: 'Failed to get conversations' });
     }
 };
+
+exports.sendFile = async (req, res) => {
+    try {
+        const senderId = Number(req.user.id);
+        const { receiverId } = req.body;
+        const rId = Number(receiverId);
+
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+        // Build accessible URL
+        const fileUrl = `/uploads/${req.file.filename}`; // adjust if you serve statically
+        const type = 'FILE';
+
+        // 1️⃣ Get or create conversation
+        const conversation = await getOrCreateConversation(senderId, rId);
+
+        // 2️⃣ Create message
+        const rawMessage = await prisma.message.create({
+            data: {
+                conversationId: conversation.id,
+                senderId,
+                content: fileUrl,
+                type,
+            },
+            include: {
+                sender: { select: { id: true, fullName: true } },
+            },
+        });
+
+        const message = {
+            id: String(rawMessage.id),
+            senderId,
+            receiverId: rId,
+            text: rawMessage.content,
+            type: rawMessage.type,
+            ts: rawMessage.createdAt,
+            seen: false,
+            sender: {
+                id: rawMessage.sender.id,
+                fullName: rawMessage.sender.fullName,
+            },
+        };
+
+        // 3️⃣ Emit to online sockets
+        const io = getIO();
+        const onlineUsers = await getOnlineUsers();
+        const receiverSockets = onlineUsers.get(rId);
+
+        if (receiverSockets && receiverSockets.size > 0) {
+            for (const sid of receiverSockets) {
+                const socket = io.sockets.sockets.get(sid);
+                if (!socket) continue;
+
+                // Mark as seen if viewing conversation
+                if (socket.activeConversation === conversation.id) {
+                    await prisma.message.update({
+                        where: { id: rawMessage.id },
+                        data: { seen: true },
+                    });
+                    io.to(socket.id).emit('messageAck', { messageId: rawMessage.id });
+                }
+
+                io.to(socket.id).emit('newMessage', message);
+            }
+        } else {
+            // Offline → push notification
+            await pushNotification({
+                userId: rId,
+                type: 'MESSAGE',
+                title: 'New File',
+                message: `${rawMessage.sender.fullName} sent you a file`,
+                redirectUrl: `/chat/${rawMessage.sender.id}`,
+                metadata: { senderId: rawMessage.sender.id, messageId: rawMessage.id },
+            });
+        }
+
+        res.json({ success: true, fileUrl });
+    } catch (err) {
+        console.error('❌ sendFile error:', err);
+        res.status(500).json({ error: 'Failed to send file' });
+    }
+};

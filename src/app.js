@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const prisma = require('./config/db');
 const { initSocket, getOnlineUsers } = require('./utils/socket');
@@ -16,7 +17,9 @@ const PORT = process.env.PORT || 4000;
 const AUTH_STRATEGY = process.env.AUTH_STRATEGY || 'dev';
 
 // ===== Middleware =====
-app.use(helmet());
+app.use(helmet({
+    crossOriginResourcePolicy: false, // disable CORP so we can set manually
+}));
 
 if (AUTH_STRATEGY === 'dev') {
     app.use(cors());
@@ -30,7 +33,16 @@ if (AUTH_STRATEGY === 'dev') {
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(cookieParser());
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
+const uploadPath = path.resolve(process.cwd(), 'uploads');
+
+if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+
+app.use('/uploads', (req, res, next) => {
+    // Allow cross-origin images to be loaded
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // <-- this is key
+    next();
+}, express.static(uploadPath));
 
 // ===== Routes =====
 const authRoutes = require('./routes/auth.routes');

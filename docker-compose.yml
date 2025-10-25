@@ -29,8 +29,10 @@ services:
     command: >
       sh -c "
         npx prisma migrate deploy &&
-        npm start
+        npm run dev
       "
+    volumes:
+      - ./uploads:/app/uploads
 
   prisma-studio:
     build: .

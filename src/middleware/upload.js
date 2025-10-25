@@ -1,11 +1,20 @@
+// src/middleware/upload.js
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// save files in project-root/uploads
-const uploadPath = path.join(__dirname, "..", "..", "uploads");
-if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+// Define absolute uploads path
+const uploadPath = path.resolve(process.cwd(), 'uploads');
 
+// Make sure the folder exists
+if (!fs.existsSync(uploadPath)) {
+    fs.mkdirSync(uploadPath, { recursive: true });
+    console.log('✅ Uploads folder created at:', uploadPath);
+} else {
+    console.log('✅ Uploads folder exists at:', uploadPath);
+}
+
+// Multer storage config
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadPath),
     filename: (req, file, cb) => {
@@ -15,5 +24,7 @@ const storage = multer.diskStorage({
     }
 });
 
+// Multer instance
 const upload = multer({ storage });
+
 module.exports = upload;
