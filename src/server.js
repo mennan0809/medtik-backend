@@ -8,6 +8,42 @@ const PORT = process.env.PORT || 4000;
 // ===== Server start =====
 console.log(`🚀 Server starting at ${new Date().toLocaleString()} on port ${PORT}`);
 
+// ===== Cron: cleanup old medical records (older than 2 months) =====
+cron.schedule("0 0 * * *", async () => {
+    try {
+        const twoMonthsAgo = new Date();
+        twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+
+        const deletedRecords = await prisma.medicalRecord.deleteMany({
+            where: {
+                createdAt: { lt: twoMonthsAgo },
+            },
+        });
+
+        console.log(`🩺 Cleaned up ${deletedRecords.count} old medical records.`);
+    } catch (err) {
+        console.error("❌ Error cleaning old medical records:", err);
+    }
+});
+
+// ===== Cron: cleanup old messages (older than 90 days) =====
+cron.schedule("0 0 * * *", async () => {
+    try {
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+        const deletedMessages = await prisma.message.deleteMany({
+            where: {
+                createdAt: { lt: ninetyDaysAgo },
+            },
+        });
+
+        console.log(`💬 Cleaned up ${deletedMessages.count} old messages.`);
+    } catch (err) {
+        console.error("❌ Error cleaning old messages:", err);
+    }
+});
+
 // ===== Cron: delete old doctor slots =====
 cron.schedule("0 0 * * *", async () => {
     try {
